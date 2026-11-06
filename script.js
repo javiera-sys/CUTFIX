@@ -284,6 +284,7 @@ function loadParamsUI(){
  * y tolNeg se considera como reducción del margen útil entre piezas.
  * El kerf NO se suma a la pieza: se suma al espacio entre piezas al colocar.
  */
+// <<ALGO-START (sin DOM; se prueba por separado)
 function applyTolerance(p){
   // Piezas importadas de Excel: tolerancia propia por eje (solo +número, ya validada).
   if(p.tolAncho!==undefined || p.tolLargo!==undefined){
@@ -323,104 +324,88 @@ function expandPieces(){
  * Filtra tableros disponibles para un material+espesor.
  */
 function getTablerosFor(material, espesor){
-  const list = STATE.tableros.filter(t => t.material===material && t.espesor===espesor);
+  const list = STATE.tableros.filter(t => t.material===material && +t.espesor === +espesor);
   const expanded = [];
   list.forEach(t=>{ for(let i=0;i<t.cantidad;i++) expanded.push({...t, instanceIdx:i}); });
   return expanded;
 }
 
+/** Margen total por lado de un tablero. */
+function margenTablero(board){
+  return STATE.params.margenPer + (board.margen||0) + STATE.params.margenSeg;
+}
+
 /**
- * Comprueba si una pieza cabe en un tablero (con márgenes).
+ * Orientaciones permitidas de una pieza (rotación y veta). Una sola regla para todos los modos.
+ * veta 'largo' -> solo normal; veta 'ancho' -> solo girada (si el control de veta está activo).
  */
+function orientaciones(piece){
+  const normal = {w:piece.w, h:piece.h, rot:false};
+  const girada = {w:piece.h, h:piece.w, rot:true};
+  if(STATE.params.veta){
+    if(piece.veta==='largo') return [normal];
+    if(piece.veta==='ancho') return [girada];
+  }
+  return piece.rot ? [normal, girada] : [normal];
+}
+
+/** ¿Cabe la pieza en el tablero (con márgenes), en alguna orientación permitida? */
 function pieceFitsInBoard(p, board){
-  const m = STATE.params.margenPer + (board.margen||0) + STATE.params.margenSeg;
+  const m = margenTablero(board);
   const availW = board.ancho - 2*m;
   const availH = board.largo - 2*m;
-  const fitsNormal = (p.w <= availW && p.h <= availH);
-  const fitsRot = p.rot && (p.h <= availW && p.w <= availH);
-  return fitsNormal || fitsRot;
+  return orientaciones(p).some(o => o.w <= availW + 1e-9 && o.h <= availH + 1e-9);
 }
 
 /* =========================================================
    MODO 1: GUILLOTINE
    ========================================================= */
 /**
- * Estrategia guillotine con subdivisiones. Máximo respeto a veta.
- * Algoritmo: se coloca una pieza en una región libre; se divide
- * la región restante en dos sub-regiones (shelf horizontal o vertical).
- * Se prueban ambas divisiones y se queda con la que deja la región
- * más "útil" (menos desperdicio residual).
+ * Guillotine: cada pieza se coloca en la región libre donde mejor encaja
+ * (menor sobrante del lado corto) y la región se divide en dos con un corte
+ * de sierra (kerf) entre pieza y sobrante. Si una pieza no cabe, se intenta
+ * con las siguientes (antes se detenía en la primera que no cabía).
+ * opts.keepOrder = true respeta el orden recibido (lo usa el modo mixto).
  */
-function optimizeGuillotine(pieces, board){
-  const m = STATE.params.margenPer + (board.margen||0) + STATE.params.margenSeg;
+function optimizeGuillotine(pieces, board, opts){
+  const m = margenTablero(board);
   const kerf = STATE.params.kerf;
-  const availW = board.ancho - 2*m;
-  const availH = board.largo - 2*m;
+  const EPS = 0.01;
+  const freeRegions = [{x:m, y:m, w:board.ancho-2*m, h:board.largo-2*m}];
+  const placed = [], unplaced = [];
+  const queue = (opts && opts.keepOrder) ? [...pieces] : [...pieces].sort((a,b)=>(b.w*b.h)-(a.w*a.h));
 
-  // Regiones: {x,y,w,h}
-  let freeRegions = [{x:m, y:m, w:availW, h:availH}];
-  const placed = [];
-
-  // Ordenar por área descendente
-  const sorted = [...pieces].sort((a,b)=>(b.w*b.h)-(a.w*a.h));
-  const remaining = [...sorted];
-
-  function tryPlacePiece(piece){
-    for(let ri=0; ri<freeRegions.length; ri++){
-      const reg = freeRegions[ri];
-      const orientations = [{w:piece.w, h:piece.h, rot:false}];
-      if(piece.rot) orientations.push({w:piece.h, h:piece.w, rot:true});
-      for(const o of orientations){
-        // Verificar veta
-        if(STATE.params.veta){
-          if(piece.veta==='largo' && o.rot) continue;
-          if(piece.veta==='ancho' && !o.rot) continue;
-        }
-        if(o.w <= reg.w && o.h <= reg.h){
-          // Colocar
-          const placedP = {
-            ...piece, x:reg.x, y:reg.y, w:o.w, h:o.h, rotated:o.rot,
-            boardId: board.instanceId
-          };
-          placed.push(placedP);
-          // Subdividir región (guillotine)
-          const rightW = reg.w - o.w - kerf;
-          const bottomH = reg.h - o.h - kerf;
-          const newRegions = [];
-          // División horizontal (shelf)
-          if(rightW > 0 && reg.h > 0){
-            newRegions.push({x:reg.x+o.w+kerf, y:reg.y, w:rightW, h:reg.h});
-          }
-          if(bottomH > 0 && o.w > 0){
-            newRegions.push({x:reg.x, y:reg.y+o.h+kerf, w:o.w, h:bottomH});
-          }
-          // División vertical alternativa
-          const altRegions = [];
-          if(bottomH > 0){
-            altRegions.push({x:reg.x, y:reg.y+o.h+kerf, w:reg.w, h:bottomH});
-          }
-          if(rightW > 0 && o.h > 0){
-            altRegions.push({x:reg.x+o.w+kerf, y:reg.y, w:rightW, h:o.h});
-          }
-          // Elegir la que deje mayor área útil
-          const areaA = newRegions.reduce((s,r)=>s+(r.w>0&&r.h>0?r.w*r.h:0),0);
-          const areaB = altRegions.reduce((s,r)=>s+(r.w>0&&r.h>0?r.w*r.h:0),0);
-          const chosen = areaA >= areaB ? newRegions : altRegions;
-          freeRegions.splice(ri,1,...chosen);
-          return true;
+  function mejorEncaje(piece){
+    let best = null;
+    freeRegions.forEach((reg,ri)=>{
+      for(const o of orientaciones(piece)){
+        if(o.w <= reg.w+EPS && o.h <= reg.h+EPS){
+          const sobraW = reg.w-o.w, sobraH = reg.h-o.h;
+          const score = Math.min(sobraW,sobraH)*1e5 + Math.max(sobraW,sobraH);
+          if(!best || score < best.score) best = {ri, o, score};
         }
       }
-    }
-    return false;
+    });
+    return best;
   }
 
-  for(let i=0;i<remaining.length;i++){
-    const piece = remaining[i];
-    if(!tryPlacePiece(piece)){
-      return { placed, unplaced:[piece, ...remaining.slice(i+1)], freeRegions };
-    }
+  for(const piece of queue){
+    const b = mejorEncaje(piece);
+    if(!b){ unplaced.push(piece); continue; }
+    const reg = freeRegions[b.ri], o = b.o;
+    placed.push({...piece, x:reg.x, y:reg.y, w:o.w, h:o.h, rotated:o.rot, boardId:board.instanceId});
+    const rightW = reg.w - o.w - kerf, bottomH = reg.h - o.h - kerf;
+    // Opción A: derecha a altura completa + abajo solo bajo la pieza
+    const A = [], B = [];
+    if(rightW > EPS) A.push({x:reg.x+o.w+kerf, y:reg.y, w:rightW, h:reg.h});
+    if(bottomH > EPS) A.push({x:reg.x, y:reg.y+o.h+kerf, w:o.w, h:bottomH});
+    // Opción B: abajo a ancho completo + derecha solo junto a la pieza
+    if(bottomH > EPS) B.push({x:reg.x, y:reg.y+o.h+kerf, w:reg.w, h:bottomH});
+    if(rightW > EPS) B.push({x:reg.x+o.w+kerf, y:reg.y, w:rightW, h:o.h});
+    const maxA = A.reduce((s,r)=>Math.max(s,r.w*r.h),0), maxB = B.reduce((s,r)=>Math.max(s,r.w*r.h),0);
+    freeRegions.splice(b.ri, 1, ...(maxA >= maxB ? A : B));
   }
-  return { placed, unplaced:[], freeRegions };
+  return { placed, unplaced, freeRegions };
 }
 
 /* =========================================================
@@ -473,13 +458,7 @@ function optimizeMaxRects(pieces, board){
   function findBestPosition(piece){
     let best = null;
     for(const fr of freeRects){
-      const opts = [{w:piece.w, h:piece.h, rot:false}];
-      if(piece.rot) opts.push({w:piece.h, h:piece.w, rot:true});
-      for(const o of opts){
-        if(STATE.params.veta){
-          if(piece.veta==='largo' && o.rot) continue;
-          if(piece.veta==='ancho' && !o.rot) continue;
-        }
+      for(const o of orientaciones(piece)){
         if(o.w <= fr.w + 1e-9 && o.h <= fr.h + 1e-9){
           // Heurística: mejor ajuste (menor área sobrante)
           const leftover = (fr.w*fr.h) - (o.w*o.h);
@@ -522,29 +501,18 @@ function optimizeMaxRects(pieces, board){
  * y menos desperdicio, con un desempate por número de cortes estimados.
  */
 function optimizeMixed(pieces, board){
-  const variants = [];
+  const orden = {
+    'Guillotine-área':   [...pieces].sort((a,b)=>(b.w*b.h)-(a.w*a.h)),
+    'Guillotine-largo':  [...pieces].sort((a,b)=>Math.max(b.w,b.h)-Math.max(a.w,a.h) || (b.w*b.h)-(a.w*a.h)),
+    'Guillotine-ancho':  [...pieces].sort((a,b)=>Math.min(b.w,b.h)-Math.min(a.w,a.h) || (b.w*b.h)-(a.w*a.h))
+  };
+  const variants = Object.entries(orden).map(([name,list])=>({name, result: optimizeGuillotine(list, board, {keepOrder:true})}));
+  variants.push({ name:'MaxRects', result: optimizeMaxRects(pieces, board) });
 
-  // Variante A: guillotine orden descendente por área (ya implementado)
-  const gA = optimizeGuillotine(pieces, board);
-  variants.push({ name:'Guillotine-A', result: gA });
-
-  // Variante B: guillotine orden por altura descendente
-  const byHeight = [...pieces].sort((a,b)=>b.h-a.h);
-  const gB = optimizeGuillotine(byHeight, board);
-  variants.push({ name:'Guillotine-B', result: gB });
-
-  // Variante C: MaxRects estándar
-  const mR = optimizeMaxRects(pieces, board);
-  variants.push({ name:'MaxRects', result: mR });
-
-  // Escoger mejor: menos no colocadas, luego menor área desperdicio
+  // Mejor variante = más área de pieza colocada en este tablero
   let best = variants[0];
   for(const v of variants){
-    const better =
-      v.result.unplaced.length < best.result.unplaced.length ||
-      (v.result.unplaced.length === best.result.unplaced.length &&
-        usedArea(v.result.placed) > usedArea(best.result.placed));
-    if(better) best = v;
+    if(usedArea(v.result.placed) > usedArea(best.result.placed) + 1e-6) best = v;
   }
   return { ...best.result, variantName: best.name, allVariants: variants.map(v=>({
     name:v.name, placed:v.result.placed.length, unplaced:v.result.unplaced.length
@@ -590,7 +558,7 @@ function runMode(modeName){
 
     // Filtrar piezas que no caben
     remaining = remaining.filter(p=>{
-      if(!pieceFitsInBoard(p, validTab)){
+      if(!available.some(b=>pieceFitsInBoard(p, b))){
         unplacedAll.push({...p, reason:'Pieza más grande que el tablero'});
         return false;
       }
@@ -622,12 +590,35 @@ function runMode(modeName){
     }
   });
 
-  return {
-    mode: modeName,
-    boards: boardsUsed,
-    unplaced: unplacedAll,
-    totalCuts
-  };
+  const totalEsperado = Object.values(grouped).reduce((n,g)=>n+g.pieces.length,0);
+  const out = { mode: modeName, boards: boardsUsed, unplaced: unplacedAll, totalCuts };
+  out.validation = validarResultado(out, totalEsperado);
+  return out;
+}
+
+/**
+ * Verifica un resultado: piezas dentro del tablero (con márgenes), separación de sierra
+ * entre piezas y que colocadas + no colocadas = piezas esperadas. Devuelve lista de errores.
+ */
+function validarResultado(result, totalEsperado){
+  const errs = [], kerf = STATE.params.kerf, EPS = 0.01;
+  result.boards.forEach(b=>{
+    const m = margenTablero(b.board);
+    b.placed.forEach((p,i)=>{
+      if(p.x < m-EPS || p.y < m-EPS || p.x+p.w > b.board.ancho-m+EPS || p.y+p.h > b.board.largo-m+EPS)
+        errs.push(`${b.id}: "${p.name}" excede el tablero`);
+      for(let j=i+1;j<b.placed.length;j++){
+        const q = b.placed[j];
+        const sepX = Math.max(q.x-(p.x+p.w), p.x-(q.x+q.w));
+        const sepY = Math.max(q.y-(p.y+p.h), p.y-(q.y+q.h));
+        if(Math.max(sepX,sepY) < kerf-EPS) errs.push(`${b.id}: "${p.name}" y "${q.name}" sin separación de corte`);
+      }
+    });
+  });
+  const colocadas = result.boards.reduce((n,b)=>n+b.placed.length,0);
+  if(totalEsperado!==undefined && colocadas + result.unplaced.length !== totalEsperado)
+    errs.push(`Cantidad inconsistente: ${colocadas} colocadas + ${result.unplaced.length} sin colocar ≠ ${totalEsperado}`);
+  return errs;
 }
 
 function estimateCuts(placed, mode){
@@ -666,6 +657,7 @@ function countReusable(board){
   // Región libre con ambos lados >= 200mm se considera reutilizable
   return board.freeRegions.filter(r=>r.w>=200 && r.h>=200).length;
 }
+// <<ALGO-END
 /* =========================================================
    BOTÓN PRINCIPAL: CALCULAR
    ========================================================= */
@@ -692,6 +684,8 @@ $('btnOptimize').onclick = ()=>{
       { name:'Mixto', result:rX, metrics: computeMetrics(rX), status: rX.unplaced.length===0 ? 'Mejor evaluada (no demostrada óptima)' : 'Solución heurística' }
     ];
 
+    const fallas = [rG,rM,rX].flatMap(r=>r.validation||[]);
+    if(fallas.length){ console.error('Validación de optimización:', fallas); toast('⚠️ La validación detectó '+fallas.length+' problema(s); revisa la consola','error'); }
     STATE.lastResult = results;
     renderComparison(results);
     renderPlanoSelector(results);
