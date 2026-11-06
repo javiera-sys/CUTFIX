@@ -310,6 +310,7 @@ function expandPieces(){
         name: p.nombre,
         origId: p.id,
         w: dim.w, h: dim.h,
+        ow: p.ancho, oh: p.largo,
         veta: p.veta,
         rot: p.rot && !STATE.params.rotGlobal,
         material: p.material,
@@ -765,10 +766,11 @@ function renderPlanoSelector(results){
   boards.forEach((b,i)=>{
     const o = document.createElement('option');
     o.value = i;
-    o.textContent = `Tablero ${i+1} — ${b.board.nombre} (${b.board.ancho}×${b.board.largo})`;
+    o.textContent = `Tablero ${i+1} — ${b.board.material} ${nf(b.board.espesor)} mm (${b.board.ancho}×${b.board.largo})`;
     sel.appendChild(o);
   });
   $('planosControls').style.display = boards.length?'block':'none';
+  renderResumen(best.result);
   sel.onchange = ()=> drawPlano(+sel.value);
   ['chkShowDims','chkShowCuts','chkShowVeta','chkShowLabels'].forEach(id=>{
     $(id).onchange = ()=> drawPlano(+$('selTableroPlano').value);
@@ -785,145 +787,210 @@ function applyZoom(){
   if(svg) svg.style.transform = `scale(${STATE.zoom})`;
 }
 
-function drawPlano(idx){
-  const boards = STATE.bestResult?.boards || [];
-  const b = boards[idx]; if(!b) return;
-  const board = b.board;
-  const placed = b.placed;
+// <<PLANO-START (sin DOM; se prueba por separado)
+const nf = n => Number.isInteger(+n) ? fmt(n,0) : fmt(n,1);
+const escSvg = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const truncTxt = (s,n)=> s.length>n ? s.slice(0,Math.max(1,n-1))+'…' : s;
 
-  const W = board.ancho, H = board.largo;
-  const pad = 40;
-  const scale = Math.min(900/(W+pad*2), 700/(H+pad*2), 1.2);
-  const svgW = (W+pad*2)*scale;
-  const svgH = (H+pad*2)*scale;
+/** "3, 4, 5, 9" -> "3–5, 9" */
+function compactarNumeros(nums){
+  const out=[]; let i=0;
+  while(i<nums.length){
+    let j=i; while(j+1<nums.length && nums[j+1]===nums[j]+1) j++;
+    out.push(j>i+1 ? `${nums[i]}–${nums[j]}` : nums.slice(i,j+1).join(', '));
+    i=j+1;
+  }
+  return out.join(', ');
+}
 
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(svgNS,'svg');
-  svg.setAttribute('class','plano-svg');
-  svg.setAttribute('width', svgW);
-  svg.setAttribute('height', svgH);
-  svg.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
+/** Numeración del tablero: global y dentro de su material/espesor. */
+function infoTablero(boards, idx){
+  const b = boards[idx];
+  const mismos = boards.filter(x=>x.board.material===b.board.material && +x.board.espesor===+b.board.espesor);
+  return { numero: idx+1, total: boards.length, secMat: mismos.indexOf(b)+1, totMat: mismos.length };
+}
 
-  // Fondo tablero
-  const boardRect = document.createElementNS(svgNS,'rect');
-  boardRect.setAttribute('x', pad*scale);
-  boardRect.setAttribute('y', pad*scale);
-  boardRect.setAttribute('width', W*scale);
-  boardRect.setAttribute('height', H*scale);
-  boardRect.setAttribute('fill', board.color || '#e8e8e8');
-  boardRect.setAttribute('stroke', '#334155');
-  boardRect.setAttribute('stroke-width', 2);
-  svg.appendChild(boardRect);
+/** Elige tamaño de letra y texto que quepan DENTRO de la pieza; si no caben, devuelve null. */
+function layoutTextoPieza(lineas, pw, ph){
+  const C = 0.6; // ancho medio de un carácter ≈ 0.6 × tamaño
+  let fs = Math.min(12, ph/(lineas.length*1.3+0.3));
+  if(fs < 7) return null;
+  const out = [];
+  for(let i=0;i<lineas.length;i++){
+    const l = lineas[i];
+    const maxChars = Math.floor((pw-6)/(fs*C));
+    if(l.fijo){ if(l.t.length>maxChars) return null; out.push(l.t); }
+    else { if(maxChars < l.min) return null; out.push(truncTxt(l.t, maxChars)); }
+  }
+  return { fs, lineas: out };
+}
 
-  // Margen perimetral
-  const m = STATE.params.margenPer + (board.margen||0) + STATE.params.margenSeg;
-  const marginRect = document.createElementNS(svgNS,'rect');
-  marginRect.setAttribute('x', (pad+m)*scale);
-  marginRect.setAttribute('y', (pad+m)*scale);
-  marginRect.setAttribute('width', (W-2*m)*scale);
-  marginRect.setAttribute('height', (H-2*m)*scale);
-  marginRect.setAttribute('fill','none');
-  marginRect.setAttribute('stroke', '#94a3b8');
-  marginRect.setAttribute('stroke-dasharray','4 3');
-  marginRect.setAttribute('stroke-width', 1);
-  svg.appendChild(marginRect);
+/**
+ * Construye el SVG de un tablero (a escala real, sin deformar).
+ * b: {board, placed}; info: infoTablero(); opts: {showCuts, showDims, showVeta, showLabels}
+ * Devuelve {svg, width, height}.
+ */
+function construirPlanoSVG(b, info, opts){
+  const P = STATE.params, board = b.board, placed = b.placed;
+  const W = board.ancho, H = board.largo, kerf = P.kerf, m = margenTablero(board);
+  const scale = Math.min(860/W, 760/H, 1.2);
+  const bw = W*scale, bh = H*scale;
+  const top = 122, left = 70, right = 30;
+  const svgW = Math.max(left+bw+right, 600);
+  const x0 = left + (svgW-left-right-bw)/2, y0 = top;
+  const uid2 = 'p'+info.numero;
+
+  // Piezas numeradas en el orden de colocación
+  const piezas = placed.map((p,i)=>({...p, n:i+1}));
+  const areaPiezas = piezas.reduce((s,p)=>s+p.w*p.h,0);
+  const areaTab = W*H;
+  const aprov = areaTab? areaPiezas/areaTab*100 : 0;
+
+  // Leyenda agrupada (pieza + medida final + original)
+  const grupos = {};
+  piezas.forEach(p=>{
+    const fw = p.rotated? p.h : p.w, fh = p.rotated? p.w : p.h;
+    const k = p.name+'|'+fw+'|'+fh+'|'+(p.rotated?1:0);
+    (grupos[k] = grupos[k] || {name:p.name, fw, fh, ow:p.ow, oh:p.oh, rot:p.rotated, nums:[]}).nums.push(p.n);
+  });
+  const leyenda = Object.values(grupos).map(g=>{
+    const orig = (g.ow!==undefined && (Math.abs(g.ow-g.fw)>0.01 || Math.abs(g.oh-g.fh)>0.01)) ? ` (orig. ${nf(g.ow)}×${nf(g.oh)})` : '';
+    return `#${compactarNumeros(g.nums)} · ${g.nums.length}× ${truncTxt(g.name,28)} · ${nf(g.fw)}×${nf(g.fh)} mm${g.rot?' ↻':''}${orig}`;
+  });
+  const legY = y0 + bh + 40, lh = 15;
+  const svgH = legY + 22 + leyenda.length*lh + 50;
+
+  let s = '';
+  s += `<svg xmlns="http://www.w3.org/2000/svg" class="plano-svg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" font-family="Segoe UI, Arial, sans-serif">`;
+  s += `<defs><pattern id="hatch${uid2}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="#cbd5e1" stroke-width="1"/></pattern>`+
+       `<marker id="arr${uid2}" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto"><polygon points="0,0 6,3 0,6" fill="#7c2d12"/></marker></defs>`;
+  s += `<rect width="${svgW}" height="${svgH}" fill="#fff"/>`;
+
+  // Encabezado
+  s += `<text x="${left-30}" y="24" font-size="17" font-weight="700" fill="#0f172a">Tablero ${info.numero} de ${info.total} — ${escSvg(board.material)} · espesor ${nf(board.espesor)} mm</text>`;
+  s += `<text x="${left-30}" y="44" font-size="12.5" fill="#334155">Tablero ${info.secMat} de ${info.totMat} de este material · Medidas: ${fmt(W)} × ${fmt(H)} mm (ancho × largo)</text>`;
+  s += `<text x="${left-30}" y="62" font-size="12.5" fill="#334155">Corte de sierra (kerf): ${kerf} mm · Margen perimetral: ${nf(m)} mm</text>`;
+  s += `<text x="${left-30}" y="80" font-size="12.5" font-weight="600" fill="#166534">${piezas.length} piezas · Aprovechamiento ${aprov.toFixed(1)}% · Sobrante ${(100-aprov).toFixed(1)}% (${fmt((areaTab-areaPiezas)/1e6,2)} m²)</text>`;
+
+  // Cotas del tablero
+  const ty = y0-16;
+  s += `<g stroke="#334155" stroke-width="1" fill="none"><line x1="${x0}" y1="${ty}" x2="${x0+bw}" y2="${ty}"/><line x1="${x0}" y1="${ty-4}" x2="${x0}" y2="${ty+4}"/><line x1="${x0+bw}" y1="${ty-4}" x2="${x0+bw}" y2="${ty+4}"/>`+
+       `<line x1="${x0-16}" y1="${y0}" x2="${x0-16}" y2="${y0+bh}"/><line x1="${x0-20}" y1="${y0}" x2="${x0-12}" y2="${y0}"/><line x1="${x0-20}" y1="${y0+bh}" x2="${x0-12}" y2="${y0+bh}"/></g>`;
+  s += `<text x="${x0+bw/2}" y="${ty-5}" text-anchor="middle" font-size="12" font-weight="600" fill="#0f172a">${fmt(W)} mm</text>`;
+  s += `<text transform="translate(${x0-22} ${y0+bh/2}) rotate(-90)" text-anchor="middle" font-size="12" font-weight="600" fill="#0f172a">${fmt(H)} mm</text>`;
+
+  // Tablero: fondo, sobrante rayado y margen
+  s += `<rect x="${x0}" y="${y0}" width="${bw}" height="${bh}" fill="#f8fafc" stroke="#334155" stroke-width="2"/>`;
+  s += `<rect x="${x0}" y="${y0}" width="${bw}" height="${bh}" fill="url(#hatch${uid2})"/>`;
+  s += `<rect x="${x0+m*scale}" y="${y0+m*scale}" width="${(W-2*m)*scale}" height="${(H-2*m)*scale}" fill="none" stroke="#94a3b8" stroke-dasharray="4 3"/>`;
+
+  // Bandas de kerf (debajo de las piezas)
+  if(opts.showCuts){
+    const kb = Math.max(kerf*scale, 1.5);
+    piezas.forEach(p=>{
+      const x = x0+p.x*scale, y = y0+p.y*scale, w = p.w*scale, h = p.h*scale;
+      s += `<rect x="${x+w}" y="${y}" width="${kb}" height="${h+kb}" fill="#ef4444" fill-opacity="0.6"/>`;
+      s += `<rect x="${x}" y="${y+h}" width="${w+kb}" height="${kb}" fill="#ef4444" fill-opacity="0.6"/>`;
+    });
+  }
+
   // Piezas
-  const showCuts = $('chkShowCuts').checked;
-  const showDims = $('chkShowDims').checked;
-  const showVeta = $('chkShowVeta').checked;
-  const showLabels = $('chkShowLabels').checked;
-
-  placed.forEach((p,i)=>{
-    const color = hslColorFromString(p.material + p.name);
-    const x = (pad + p.x)*scale;
-    const y = (pad + p.y)*scale;
-    const w = p.w*scale;
-    const h = p.h*scale;
-
-    const rect = document.createElementNS(svgNS,'rect');
-    rect.setAttribute('x', x);
-    rect.setAttribute('y', y);
-    rect.setAttribute('width', w);
-    rect.setAttribute('height', h);
-    rect.setAttribute('fill', color);
-    rect.setAttribute('fill-opacity', 0.75);
-    rect.setAttribute('stroke', showCuts ? '#0f172a' : 'transparent');
-    rect.setAttribute('stroke-width', showCuts ? 1 : 0);
-    svg.appendChild(rect);
-
-    // Etiqueta
-    if(showLabels){
-      const label = document.createElementNS(svgNS,'text');
-      label.setAttribute('x', x + w/2);
-      label.setAttribute('y', y + h/2);
-      label.setAttribute('text-anchor','middle');
-      label.setAttribute('dominant-baseline','middle');
-      label.setAttribute('font-size', Math.max(9, Math.min(14, w/8)));
-      label.setAttribute('fill','#0f172a');
-      label.setAttribute('font-weight','600');
-      if(w > 50 && h > 20){
-        label.textContent = p.name.substring(0,14);
-        svg.appendChild(label);
-        if(showDims && h > 40){
-          const dim = document.createElementNS(svgNS,'text');
-          dim.setAttribute('x', x + w/2);
-          dim.setAttribute('y', y + h/2 + 15);
-          dim.setAttribute('text-anchor','middle');
-          dim.setAttribute('font-size', Math.max(8, Math.min(12, w/10)));
-          dim.setAttribute('fill','#334155');
-          dim.textContent = `${Math.round(p.w)}×${Math.round(p.h)}`;
-          svg.appendChild(dim);
-        }
-      } else {
-        // Etiqueta externa con número
-        label.textContent = (i+1);
-        label.setAttribute('fill','#fff');
-        label.setAttribute('font-size', 10);
-        svg.appendChild(label);
-      }
+  piezas.forEach(p=>{
+    const x = x0+p.x*scale, y = y0+p.y*scale, w = p.w*scale, h = p.h*scale;
+    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${hslColorFromString(p.material+p.name)}" fill-opacity="0.85" stroke="#0f172a" stroke-width="1"/>`;
+    // Veta (flecha en el borde, para no chocar con el texto)
+    if(opts.showVeta && p.veta!=='ninguna' && w>26 && h>26){
+      const vertical = (p.veta==='largo') !== !!p.rotated;
+      s += vertical
+        ? `<line x1="${x+7}" y1="${y+h*0.2}" x2="${x+7}" y2="${y+h*0.8}" stroke="#7c2d12" stroke-width="1.4" marker-end="url(#arr${uid2})"/>`
+        : `<line x1="${x+w*0.2}" y1="${y+h-7}" x2="${x+w*0.8}" y2="${y+h-7}" stroke="#7c2d12" stroke-width="1.4" marker-end="url(#arr${uid2})"/>`;
     }
-
-    // Veta: flecha
-    if(showVeta && p.veta !== 'ninguna'){
-      const arrow = document.createElementNS(svgNS,'line');
-      let ax1, ay1, ax2, ay2;
-      if(p.veta === 'largo'){
-        ax1 = x + w/2; ay1 = y + h*0.2; ax2 = x + w/2; ay2 = y + h*0.8;
-      } else {
-        ax1 = x + w*0.2; ay1 = y + h/2; ax2 = x + w*0.8; ay2 = y + h/2;
-      }
-      arrow.setAttribute('x1', ax1); arrow.setAttribute('y1', ay1);
-      arrow.setAttribute('x2', ax2); arrow.setAttribute('y2', ay2);
-      arrow.setAttribute('stroke', '#7c2d12');
-      arrow.setAttribute('stroke-width', 1.5);
-      arrow.setAttribute('marker-end','url(#arrowhead)');
-      svg.appendChild(arrow);
+    // Texto: solo si cabe dentro de la pieza (el resto queda en la leyenda)
+    const dims = `${nf(p.w)}×${nf(p.h)}`;
+    const cands = [];
+    if(opts.showLabels && opts.showDims) cands.push([{t:`#${p.n} ${p.name}`,min:6},{t:dims,fijo:true}]);
+    if(opts.showDims) cands.push([{t:`#${p.n}`,fijo:true},{t:dims,fijo:true}]);
+    if(opts.showLabels) cands.push([{t:`#${p.n} ${p.name}`,min:6}]);
+    cands.push([{t:`#${p.n}`,fijo:true}]);
+    let lay = null;
+    for(const c of cands){ lay = layoutTextoPieza(c, w, h); if(lay) break; }
+    if(lay){
+      const lhh = lay.fs*1.3, cx = x+w/2, cy = y+h/2 - (lay.lineas.length-1)*lhh/2;
+      lay.lineas.forEach((t,i)=>{
+        s += `<text x="${cx}" y="${cy+i*lhh}" text-anchor="middle" dominant-baseline="middle" font-size="${lay.fs.toFixed(1)}" font-weight="${i===0?700:500}" fill="#0f172a">${escSvg(t)}</text>`;
+      });
     }
   });
 
-  // Definición de flecha
-  const defs = document.createElementNS(svgNS,'defs');
-  defs.innerHTML = `<marker id="arrowhead" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto">
-    <polygon points="0,0 6,3 0,6" fill="#7c2d12"/></marker>`;
-  svg.appendChild(defs);
+  // Leyenda
+  s += `<text x="${left-30}" y="${legY}" font-size="13" font-weight="700" fill="#0f172a">Piezas de este tablero (medida: ancho × largo, ↻ = girada)</text>`;
+  leyenda.forEach((t,i)=>{ s += `<text x="${left-30}" y="${legY+20+i*lh}" font-size="12" fill="#1e293b">${escSvg(t)}</text>`; });
 
-  // Dimensiones del tablero
-  const dimLabel = document.createElementNS(svgNS,'text');
-  dimLabel.setAttribute('x', svgW/2);
-  dimLabel.setAttribute('y', svgH - 8);
-  dimLabel.setAttribute('text-anchor','middle');
-  dimLabel.setAttribute('font-size', 12);
-  dimLabel.setAttribute('fill','#334155');
-  dimLabel.setAttribute('font-weight','600');
-  dimLabel.textContent = `${board.nombre} — ${W} × ${H} mm`;
-  svg.appendChild(dimLabel);
+  // Esquema ampliado del kerf
+  const ky = legY + 24 + leyenda.length*lh + 6;
+  s += `<rect x="${left-30}" y="${ky-9}" width="28" height="12" fill="#cbd5e1" stroke="#0f172a"/><rect x="${left-2}" y="${ky-9}" width="6" height="12" fill="#ef4444" fill-opacity="0.6"/><rect x="${left+4}" y="${ky-9}" width="28" height="12" fill="#cbd5e1" stroke="#0f172a"/>`;
+  s += `<text x="${left+42}" y="${ky}" font-size="11.5" fill="#334155">Separación de sierra entre piezas: ${kerf} mm (esquema ampliado). Zona rayada = sobrante.</text>`;
+  s += `</svg>`;
+  return { svg: s, width: svgW, height: svgH };
+}
 
+/** Resumen por material + espesor del resultado de una optimización. */
+function resumenPorMaterial(result){
+  const g = {};
+  const get = (mat, esp)=> g[mat+'|'+(+esp)] = g[mat+'|'+(+esp)] || {material:mat, espesor:+esp, medidas:new Set(), tableros:0, colocadas:0, sinColocar:0, areaPiezas:0, areaTableros:0};
+  result.boards.forEach(b=>{
+    const o = get(b.board.material, b.board.espesor);
+    o.medidas.add(`${fmt(b.board.ancho)}×${fmt(b.board.largo)}`);
+    o.tableros++; o.colocadas += b.placed.length;
+    o.areaPiezas += b.placed.reduce((s,p)=>s+p.w*p.h,0);
+    o.areaTableros += b.board.ancho*b.board.largo;
+  });
+  result.unplaced.forEach(p=>{ get(p.material, p.espesor).sinColocar++; });
+  return Object.values(g).map(o=>({
+    ...o, medidas: o.medidas.size ? [...o.medidas].join(' · ') : '—',
+    requeridas: o.colocadas + o.sinColocar,
+    aprov: o.areaTableros ? o.areaPiezas/o.areaTableros*100 : 0,
+    desperdicioMm2: o.areaTableros - o.areaPiezas,
+    desperdicioPct: o.areaTableros ? (o.areaTableros-o.areaPiezas)/o.areaTableros*100 : 0
+  })).sort((a,b)=> a.material.localeCompare(b.material) || a.espesor-b.espesor);
+}
+
+function drawPlano(idx){
+  const boards = STATE.bestResult?.boards || [];
+  const b = boards[idx]; if(!b) return;
+  const out = construirPlanoSVG(b, infoTablero(boards, idx), {
+    showCuts: $('chkShowCuts').checked, showDims: $('chkShowDims').checked,
+    showVeta: $('chkShowVeta').checked, showLabels: $('chkShowLabels').checked
+  });
   const container = $('planoContainer');
-  container.innerHTML='';
-  container.appendChild(svg);
-  svg.style.transform = `scale(${STATE.zoom})`;
+  container.innerHTML = out.svg;
+  container.querySelector('svg').style.transform = `scale(${STATE.zoom})`;
+  currentPlanData = { board:b.board, placed:b.placed, svgW:out.width, svgH:out.height };
+}
 
-  currentPlanData = { board, placed, svgW, svgH };
+/** Pinta el resumen general por material y espesor debajo de los planos. */
+function renderResumen(result){
+  const rows = resumenPorMaterial(result);
+  const kerf = STATE.params.kerf;
+  const th = $('resumenMateriales').querySelector('thead');
+  const tb = $('resumenMateriales').querySelector('tbody');
+  th.innerHTML = '<tr><th>Material</th><th>Espesor (mm)</th><th>Tablero (ancho×largo mm)</th><th>Piezas requeridas</th><th>Colocadas</th><th>Tableros usados</th><th>Kerf (mm)</th><th>Aprovechamiento</th><th>Desperdicio estimado</th></tr>';
+  tb.innerHTML = '';
+  let t = {req:0,col:0,tab:0,ap:0,at:0};
+  rows.forEach(r=>{
+    t.req+=r.requeridas; t.col+=r.colocadas; t.tab+=r.tableros; t.ap+=r.areaPiezas; t.at+=r.areaTableros;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${escapeHtml(r.material)}</td><td>${nf(r.espesor)}</td><td>${r.medidas}</td><td>${r.requeridas}</td>`+
+      `<td>${r.colocadas}${r.sinColocar?` <span style="color:#dc2626">(${r.sinColocar} sin colocar)</span>`:''}</td><td>${r.tableros}</td><td>${kerf}</td>`+
+      `<td>${r.aprov.toFixed(1)}%</td><td>${fmt(r.desperdicioMm2/1e6,2)} m² (${r.desperdicioPct.toFixed(1)}%)</td>`;
+    tb.appendChild(tr);
+  });
+  const tr = document.createElement('tr');
+  tr.style.fontWeight = '700';
+  tr.innerHTML = `<td colspan="3">TOTAL</td><td>${t.req}</td><td>${t.col}</td><td>${t.tab}</td><td>${kerf}</td>`+
+    `<td>${t.at?(t.ap/t.at*100).toFixed(1):'0.0'}%</td><td>${fmt((t.at-t.ap)/1e6,2)} m² (${t.at?((t.at-t.ap)/t.at*100).toFixed(1):'0.0'}%)</td>`;
+  tb.appendChild(tr);
+  $('resumenCard').style.display = rows.length ? 'block' : 'none';
 }
 
 function hslColorFromString(str){
@@ -932,6 +999,7 @@ function hslColorFromString(str){
   const h = Math.abs(hash) % 360;
   return `hsl(${h}, 55%, 72%)`;
 }
+// <<PLANO-END
 
 /* =========================================================
    HOJA DE CORTE
