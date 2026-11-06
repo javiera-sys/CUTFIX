@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OptiCorte Pro -- Optimizador Inteligente de Tableros</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js" defer></script>
+</head>
+<body>
+
+<!-- ================= SIDEBAR ================= -->
+<aside class="sidebar" id="sidebar">
+  <div class="brand">
+    <div class="brand-icon">✂</div>
+    <div>
+      <h1>OptiCorte<span>Pro</span></h1>
+      <small>Optimizador de tableros</small>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <button class="nav-btn active" data-section="inicio">🏠 <span>Inicio</span></button>
+    <button class="nav-btn" data-section="tableros">🪵 <span>Tableros</span></button>
+    <button class="nav-btn" data-section="piezas">📐 <span>Piezas</span></button>
+    <button class="nav-btn" data-section="importar">📥 <span>Importar Excel</span></button>
+    <button class="nav-btn" data-section="parametros">⚙️ <span>Parámetros</span></button>
+    <button class="nav-btn" data-section="optimizacion">🚀 <span>Optimización</span></button>
+    <button class="nav-btn" data-section="planos">🗺️ <span>Planos de corte</span></button>
+    <button class="nav-btn" data-section="hoja">📋 <span>Hoja de corte</span></button>
+    <button class="nav-btn" data-section="sobrantes">♻️ <span>Sobrantes</span></button>
+    <button class="nav-btn" data-section="reportes">📊 <span>Reportes</span></button>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="proj-info" id="projInfo">Proyecto: <b>Sin guardar</b></div>
+    <button class="btn btn-sm btn-outline" id="btnSaveProj">💾 Guardar</button>
+    <button class="btn btn-sm btn-outline" id="btnLoadProj">📂 Cargar</button>
+    <button class="btn btn-sm btn-outline" id="btnNewProj">🆕 Nuevo</button>
+  </div>
+</aside>
+
+<!-- ================= MAIN ================= -->
+<main class="main">
+
+<!-- ========== INICIO ========== -->
+<section id="sec-inicio" class="section active">
+  <header class="sec-header">
+    <h2>Inicio</h2>
+    <p>Optimiza el corte de tableros de madera, MDF, melamina y más.</p>
+  </header>
+  <div class="grid-cards">
+    <div class="card stat"><h3>Tableros</h3><p class="stat-num" id="statTableros">0</p><small>disponibles</small></div>
+    <div class="card stat"><h3>Piezas</h3><p class="stat-num" id="statPiezas">0</p><small>por cortar</small></div>
+    <div class="card stat"><h3>Aprovechamiento</h3><p class="stat-num" id="statAprov">--</p><small>último cálculo</small></div>
+    <div class="card stat"><h3>Modo ganador</h3><p class="stat-num" id="statModo">--</p><small>mejor resultado</small></div>
+  </div>
+  <div class="card">
+    <h3>¿Cómo empezar?</h3>
+    <ol class="steps">
+      <li>Registra tus <b>tableros</b> disponibles (medidas, material, precio).</li>
+      <li>Captura tus <b>piezas</b> manualmente o impórtalas desde Excel.</li>
+      <li>Ajusta <b>parámetros</b> de corte (kerf, tolerancias, veta).</li>
+      <li>Presiona <b>CALCULAR MEJOR CORTE</b> en la sección Optimización.</li>
+      <li>Revisa los <b>planos</b>, imprime la <b>hoja de corte</b> y guarda <b>sobrantes</b>.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ========== TABLEROS ========== -->
+<section id="sec-tableros" class="section">
+  <header class="sec-header">
+    <h2>Tableros disponibles</h2>
+    <p>Registra los tipos de tablero con su material, dimensiones y precio.</p>
+  </header>
+
+  <div class="card">
+    <h3 id="formTabTitle">Agregar tablero</h3>
+    <div class="form-grid">
+      <label>Nombre <input type="text" id="tNombre" placeholder="Ej: Melamina blanca"></label>
+      <label>Material
+        <select id="tMaterial">
+          <option>Melamina</option><option>MDF</option><option>Triplay</option>
+          <option>Aglomerado</option><option>Madera sólida</option><option>Otro</option>
+        </select>
+      </label>
+      <label>Largo (mm) <input type="number" id="tLargo" value="2440" min="1"></label>
+      <label>Ancho (mm) <input type="number" id="tAncho" value="1220" min="1"></label>
+      <label>Espesor (mm) <input type="number" id="tEspesor" value="18" min="1" step="0.1"></label>
+      <label>Precio por tablero <input type="number" id="tPrecio" value="0" min="0" step="0.01"></label>
+      <label>Color
+        <input type="color" id="tColor" value="#c8a878">
+      </label>
+      <label>Dirección de veta
+        <select id="tVeta">
+          <option value="largo">A lo largo</option>
+          <option value="ancho">A lo ancho</option>
+          <option value="ninguna">Sin veta</option>
+        </select>
+      </label>
+      <label>Cantidad disponible <input type="number" id="tCantidad" value="10" min="1"></label>
+      <label>Margen seguridad (mm) <input type="number" id="tMargen" value="0" min="0"></label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" id="btnAddTablero">➕ Agregar tablero</button>
+      <button class="btn btn-ghost" id="btnCancelTablero" style="display:none">Cancelar edición</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="table-toolbar">
+      <h3>Tableros registrados</h3>
+      <button class="btn btn-sm btn-outline" id="btnExportTableros">⬇ Exportar Excel</button>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table" id="tablaTableros">
+        <thead>
+          <tr><th>Nombre</th><th>Material</th><th>Largo</th><th>Ancho</th><th>Espesor</th>
+          <th>Precio</th><th>Color</th><th>Veta</th><th>Cant.</th><th>Acciones</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ========== PIEZAS ========== -->
+<section id="sec-piezas" class="section">
+  <header class="sec-header">
+    <h2>Piezas a cortar</h2>
+    <p>Captura manual o importa desde Excel. Puedes editar cualquier registro.</p>
+  </header>
+
+  <div class="card">
+    <h3>Agregar pieza</h3>
+    <div class="form-grid">
+      <label>Nombre / ID <input type="text" id="pNombre" placeholder="Ej: Lateral izq."></label>
+      <label>Largo (mm) <input type="number" id="pLargo" min="1" value="0"></label>
+      <label>Ancho (mm) <input type="number" id="pAncho" min="1" value="0"></label>
+      <label>Cantidad <input type="number" id="pCant" min="1" value="1"></label>
+      <label>Espesor (mm) <input type="number" id="pEspesor" min="1" step="0.1" value="18"></label>
+      <label>Material
+        <select id="pMaterial">
+          <option>Melamina</option><option>MDF</option><option>Triplay</option>
+          <option>Aglomerado</option><option>Madera sólida</option><option>Otro</option>
+        </select>
+      </label>
+      <label>Veta
+        <select id="pVeta">
+          <option value="ninguna">Sin restricción</option>
+          <option value="largo">A lo largo (obligatorio)</option>
+          <option value="ancho">A lo ancho (obligatorio)</option>
+        </select>
+      </label>
+      <label>Permitir rotación
+        <select id="pRot"><option value="true">Sí</option><option value="false">No</option></select>
+      </label>
+      <label>Observaciones <input type="text" id="pObs"></label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" id="btnAddPieza">➕ Agregar pieza</button>
+      <button class="btn btn-ghost" id="btnCancelPieza" style="display:none">Cancelar edición</button>
+      <button class="btn btn-outline" id="btnEjemplo">📋 Cargar ejemplo</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="table-toolbar">
+      <h3>Piezas registradas (<span id="countPiezas">0</span>)</h3>
+      <div class="btn-group">
+        <button class="btn btn-sm btn-outline" id="btnExportPiezas">⬇ Excel</button>
+        <button class="btn btn-sm btn-outline" id="btnClearPiezas">🗑 Limpiar</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table" id="tablaPiezas">
+        <thead>
+          <tr><th>#</th><th>Nombre</th><th>Largo</th><th>Ancho</th><th>Cant.</th>
+          <th>Esp.</th><th>Material</th><th>Veta</th><th>Rot.</th><th>Obs.</th><th>Acciones</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ========== IMPORTAR EXCEL ========== -->
+<section id="sec-importar" class="section">
+  <header class="sec-header">
+    <h2>Importar desde Excel</h2>
+    <p>Sube un archivo .xlsx o .xls y mapea las columnas automáticamente.</p>
+  </header>
+
+  <div class="card">
+    <h3>1. Selecciona el archivo</h3>
+    <input type="file" id="excelFile" accept=".xlsx,.xls">
+    <div class="hint">Columnas reconocidas automáticamente: descripción, cantidad, ancho, ancho tolerancia, largo, largo tolerancia, grueso, material, unidad, veta. Solo los renglones con unidad válida (ej. HOJA) entran a la optimización; solo las tolerancias con formato +número se suman.</div>
+  </div>
+
+  <div class="card" id="excelMapCard" style="display:none">
+    <h3>2. Mapeo de columnas</h3>
+    <div class="form-grid" id="excelMapFields"></div>
+    <div class="hint">Selecciona qué columna del Excel corresponde a cada dato.</div>
+  </div>
+
+  <div class="card" id="excelReviewCard" style="display:none">
+    <h3>4. Revisión antes de importar</h3>
+    <div class="form-grid">
+      <label>Unidades que entran a optimización (separadas por coma)
+        <input type="text" id="impUnidades" value="HOJA"></label>
+      <label>Unidad de medida del Excel
+        <select id="impUnidadMedida"><option value="10" selected>Centímetros (cm)</option><option value="1">Milímetros (mm)</option></select></label>
+    </div>
+    <div id="excelWarnings" class="hint"></div>
+    <div class="table-wrap" style="max-height:320px">
+      <table class="data-table" id="excelReviewTable"><thead></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <div class="card" id="excelPreviewCard" style="display:none">
+    <h3>3. Vista previa <span id="excelRowCount"></span></h3>
+    <div class="table-wrap" style="max-height:320px">
+      <table class="data-table" id="excelPreviewTable"><thead></thead><tbody></tbody></table>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" id="btnConfirmImport">✅ Importar registros</button>
+    </div>
+  </div>
+</section>
+
+<!-- ========== PARÁMETROS ========== -->
+<section id="sec-parametros" class="section">
+  <header class="sec-header">
+    <h2>Parámetros de corte</h2>
+    <p>Estos valores se aplican a los tres modos de optimización.</p>
+  </header>
+
+  <div class="card">
+    <div class="form-grid">
+      <label>Espesor disco / Kerf (mm) <input type="number" id="prKerf" value="3" min="0" step="0.1"></label>
+      <label>Tolerancia positiva (mm) <input type="number" id="prTolPos" value="0" min="0" step="0.1"></label>
+      <label>Tolerancia negativa (mm) <input type="number" id="prTolNeg" value="0" min="0" step="0.1"></label>
+      <label>Margen perimetral (mm) <input type="number" id="prMargenPer" value="10" min="0"></label>
+      <label>Separación mínima entre piezas (mm) <input type="number" id="prSepMin" value="3" min="0"></label>
+      <label>Margen de seguridad (mm) <input type="number" id="prMargenSeg" value="0" min="0"></label>
+      <label>Compensación de corte (mm) <input type="number" id="prComp" value="0" step="0.1"></label>
+      <label>Restringir rotación global
+        <select id="prRotGlobal"><option value="false">No</option><option value="true">Sí</option></select>
+      </label>
+      <label>Respetar veta siempre
+        <select id="prVeta"><option value="true">Sí</option><option value="false">No</option></select>
+      </label>
+      <label>Criterio de prioridad
+        <select id="prCriterio">
+          <option value="tableros">Menor cantidad de tableros</option>
+          <option value="desperdicio">Menor desperdicio</option>
+          <option value="costo">Menor costo</option>
+          <option value="cortes">Menor cantidad de cortes</option>
+        </select>
+      </label>
+    </div>
+    <div class="hint">⚠️ El kerf (ancho del disco) es independiente de la tolerancia dimensional. No se aplican dos veces.</div>
+  </div>
+</section>
+
+<!-- ========== OPTIMIZACIÓN ========== -->
+<section id="sec-optimizacion" class="section">
+  <header class="sec-header">
+    <h2>Optimización</h2>
+    <p>Calcula los tres modos y compara resultados.</p>
+  </header>
+
+  <div class="card">
+    <button class="btn btn-primary btn-xl" id="btnOptimize">🚀 CALCULAR MEJOR CORTE</button>
+    <div id="optProgress" class="progress-bar" style="display:none"><div></div></div>
+  </div>
+
+  <div class="card" id="comparisonCard" style="display:none">
+    <h3>Comparación de modos</h3>
+    <div class="table-wrap">
+      <table class="data-table" id="tablaComparacion">
+        <thead>
+          <tr>
+            <th>Modo</th><th>Tableros</th><th>Área piezas</th><th>Área tableros</th>
+            <th>Desperdicio</th><th>Aprovech.</th><th>Cortes</th><th>Costo</th><th>Estado</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="best-mode" id="bestModeBox"></div>
+  </div>
+
+  <div class="card" id="savingsCard" style="display:none">
+    <h3>Ahorro de material</h3>
+    <div class="grid-cards">
+      <div class="card stat"><h3>Tableros ahorrados</h3><p class="stat-num" id="saveTab">--</p></div>
+      <div class="card stat"><h3>m² ahorrados</h3><p class="stat-num" id="saveM2">--</p></div>
+      <div class="card stat"><h3>Ahorro económico</h3><p class="stat-num" id="saveMoney">--</p></div>
+      <div class="card stat"><h3>Desperdicio</h3><p class="stat-num" id="saveWaste">--</p></div>
+    </div>
+    <div class="hint" id="savingsNote"></div>
+  </div>
+</section>
+
+<!-- ========== PLANOS ========== -->
+<section id="sec-planos" class="section">
+  <header class="sec-header">
+    <h2>Planos de corte</h2>
+    <p>Visualiza cada tablero con sus piezas a escala.</p>
+  </header>
+
+  <div class="card" id="planosControls" style="display:none">
+    <div class="planos-toolbar">
+      <div>
+        <label>Tablero: <select id="selTableroPlano"></select></label>
+        <label><input type="checkbox" id="chkShowDims" checked> Dimensiones</label>
+        <label><input type="checkbox" id="chkShowCuts" checked> Líneas de corte</label>
+        <label><input type="checkbox" id="chkShowVeta" checked> Veta</label>
+        <label><input type="checkbox" id="chkShowLabels" checked> Etiquetas</label>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-sm btn-outline" id="btnZoomIn">➕ Zoom</button>
+        <button class="btn btn-sm btn-outline" id="btnZoomOut">➖ Zoom</button>
+        <button class="btn btn-sm btn-outline" id="btnZoomReset">⟲ Reset</button>
+        <button class="btn btn-sm btn-outline" id="btnPdfPlano">📄 PDF (tablero actual)</button>
+        <button class="btn btn-primary" id="btnPdfOptim">GENERAR PDF DE OPTIMIZACIÓN</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card planos-card" id="planosCard">
+    <div id="planoContainer" class="plano-container">
+      <p class="empty-msg">Ejecuta la optimización para generar planos.</p>
+    </div>
+  </div>
+
+  <div class="card" id="resumenCard" style="display:none">
+    <h3>Resumen de materiales y cantidades</h3>
+    <div class="table-wrap">
+      <table class="data-table" id="resumenMateriales"><thead></thead><tbody></tbody></table>
+    </div>
+  </div>
+</section>
+
+<!-- ========== HOJA DE CORTE ========== -->
+<section id="sec-hoja" class="section">
+  <header class="sec-header">
+    <h2>Hoja de corte</h2>
+    <p>Documento imprimible para el operador del taller.</p>
+  </header>
+
+  <div class="card">
+    <div class="form-grid">
+      <label>Nombre del proyecto <input type="text" id="hojaProyecto" placeholder="Ej: Cocina modelo A"></label>
+      <label>Operador / Cliente <input type="text" id="hojaOperador"></label>
+      <label>Fecha <input type="date" id="hojaFecha"></label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" id="btnGenHoja">📋 Generar hoja</button>
+      <button class="btn btn-outline" id="btnPrintHoja">🖨 Imprimir / PDF</button>
+    </div>
+  </div>
+
+  <div id="hojaOutput" class="hoja-output"></div>
+</section>
+
+<!-- ========== SOBRANTES ========== -->
+<section id="sec-sobrantes" class="section">
+  <header class="sec-header">
+    <h2>Sobrantes reutilizables</h2>
+    <p>Guarda restos de material para futuros proyectos.</p>
+  </header>
+
+  <div class="card">
+    <div class="form-grid">
+      <label>Largo (mm) <input type="number" id="sLargo" min="1"></label>
+      <label>Ancho (mm) <input type="number" id="sAncho" min="1"></label>
+      <label>Espesor (mm) <input type="number" id="sEspesor" min="1" step="0.1" value="18"></label>
+      <label>Material
+        <select id="sMaterial">
+          <option>Melamina</option><option>MDF</option><option>Triplay</option>
+          <option>Aglomerado</option><option>Madera sólida</option><option>Otro</option>
+        </select>
+      </label>
+      <label>Veta
+        <select id="sVeta"><option value="largo">A lo largo</option><option value="ancho">A lo ancho</option><option value="ninguna">Sin veta</option></select>
+      </label>
+      <label>Tablero de origen <input type="text" id="sOrigen"></label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" id="btnAddSobrante">➕ Agregar sobrante</button>
+      <button class="btn btn-outline" id="btnGenSobrantes">♻️ Detectar sobrantes del último cálculo</button>
+      <button class="btn btn-sm btn-outline" id="btnExportSobrantes">⬇ Excel</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="table-wrap">
+      <table class="data-table" id="tablaSobrantes">
+        <thead><tr><th>Largo</th><th>Ancho</th><th>Espesor</th><th>Material</th><th>Veta</th><th>Origen</th><th>Acción</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ========== REPORTES ========== -->
+<section id="sec-reportes" class="section">
+  <header class="sec-header">
+    <h2>Reportes y exportaciones</h2>
+    <p>Exporta resultados, planos y proyectos.</p>
+  </header>
+  <div class="card">
+    <div class="form-grid">
+      <button class="btn btn-outline" id="btnExpPiezasXls">📄 Piezas a Excel</button>
+      <button class="btn btn-outline" id="btnExpTabXls">📄 Tableros a Excel</button>
+      <button class="btn btn-outline" id="btnExpResXls">📄 Resultados a Excel</button>
+      <button class="btn btn-outline" id="btnExpSobXls">📄 Sobrantes a Excel</button>
+      <button class="btn btn-outline" id="btnExpProj">📦 Exportar proyecto (.json)</button>
+      <button class="btn btn-outline" id="btnImpProj">📂 Importar proyecto (.json)</button>
+      <input type="file" id="projFile" accept=".json" style="display:none">
+    </div>
+  </div>
+</section>
+
+</main>
+
+<div id="toast" class="toast"></div>
+<script src="Script.js"></script>
+</body>
+</html>
