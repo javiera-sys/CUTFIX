@@ -1001,6 +1001,224 @@ function hslColorFromString(str){
 }
 // <<PLANO-END
 
+// <<PDF-START (sin DOM; se prueba por separado)
+function hslAArreglo(str){
+  const m = String(str).match(/hsl\(([\d.]+),\s*([\d.]+)%,\s*([\d.]+)%\)/);
+  if(!m) return [220,220,220];
+  const h=+m[1]/360, s=+m[2]/100, l=+m[3]/100;
+  const q = l<0.5 ? l*(1+s) : l+s-l*s, p = 2*l-q;
+  const f = t=>{ t=(t+1)%1; return t<1/6? p+(q-p)*6*t : t<1/2? q : t<2/3? p+(q-p)*(2/3-t)*6 : p; };
+  return [f(h+1/3),f(h),f(h-1/3)].map(v=>Math.round(v*255));
+}
+
+/** Agrupa las piezas de un tablero para la leyenda (misma pieza y medida = una fila). */
+function agruparLeyenda(placed){
+  const g = {};
+  placed.forEach((p,i)=>{
+    const n = i+1, fw = p.rotated? p.h : p.w, fh = p.rotated? p.w : p.h;
+    const k = p.name+'|'+fw+'|'+fh;
+    (g[k] = g[k] || {name:p.name, fw, fh, ow:p.ow, oh:p.oh, rot:!!p.rotated, nums:[]}).nums.push(n);
+  });
+  return Object.values(g).map(o=>({
+    nums: compactarNumeros(o.nums), name:o.name, cant:o.nums.length,
+    med: `${nf(o.fw)} x ${nf(o.fh)}`,
+    orig: (o.ow!==undefined && (Math.abs(o.ow-o.fw)>0.01 || Math.abs(o.oh-o.fh)>0.01)) ? `${nf(o.ow)} x ${nf(o.oh)}` : '-',
+    girada: o.rot ? 'Sí' : ''
+  }));
+}
+
+/** Elige tamaño de letra (pt) y texto que quepan dentro de una pieza dibujada en mm. */
+function textoPiezaPdf(doc, cands, pw, ph){
+  for(const c of cands){
+    for(let fs=8; fs>=4.5; fs-=0.5){
+      doc.setFontSize(fs);
+      const lh = fs*0.3528*1.25;
+      if(c.length*lh > ph-1) continue;
+      const lines = []; let ok = true;
+      for(const l of c){
+        let t = l.t; const maxW = pw-3;
+        if(doc.getTextWidth(t) > maxW){
+          if(l.fijo){ ok=false; break; }
+          while(t.length>5 && doc.getTextWidth(t+'...') > maxW) t = t.slice(0,-1);
+          if(doc.getTextWidth(t+'...') > maxW || t.length<=5){ ok=false; break; }
+          t += '...';
+        }
+        lines.push(t);
+      }
+      if(ok) return {fs, lines, lh};
+    }
+  }
+  return null;
+}
+
+/**
+ * Construye el PDF general de optimización en `doc` (jsPDF con autoTable).
+ * result: resultado de optimización; ctx: {fecha, proyecto, modo}
+ */
+function construirPdfOptimizacion(doc, result, ctx){
+  const P = STATE.params, kerf = P.kerf;
+  const resumen = resumenPorMaterial(result);
+  const boards = result.boards;
+  const totTab = boards.length;
+  const totReq = resumen.reduce((n,r)=>n+r.requeridas,0);
+  const totCol = resumen.reduce((n,r)=>n+r.colocadas,0);
+  const aP = resumen.reduce((n,r)=>n+r.areaPiezas,0), aT = resumen.reduce((n,r)=>n+r.areaTableros,0);
+
+  // ---------- Página 1: resumen general ----------
+  doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(15,23,42);
+  doc.text('OPTIMIZACIÓN DE CORTE DE TABLEROS', 12, 16);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(51,65,85);
+  doc.text(`Fecha de generación: ${ctx.fecha}`, 12, 23);
+  doc.text(`Proyecto: ${ctx.proyecto}`, 12, 28);
+  doc.text(`Corte de sierra (kerf): ${kerf} mm   |   Margen perimetral: ${nf(P.margenPer + P.margenSeg)} mm   |   Método: ${ctx.modo}`, 12, 33);
+  doc.text(`Piezas: ${totCol} de ${totReq} colocadas   |   Tableros necesarios: ${totTab}   |   Aprovechamiento global: ${aT? (aP/aT*100).toFixed(1):'0.0'}%`, 12, 38);
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(15,23,42);
+  doc.text('Resumen de materiales y cantidades', 12, 47);
+  const body = resumen.map(r=>[r.material, nf(r.espesor), r.medidas.replace(/,/g,''), r.requeridas, r.colocadas+(r.sinColocar?` (${r.sinColocar} sin colocar)`:''), r.tableros, kerf, r.aprov.toFixed(1)+'%', `${(r.desperdicioMm2/1e6).toFixed(2)} m2 (${r.desperdicioPct.toFixed(1)}%)`]);
+  body.push(['TOTAL','','',totReq,totCol,totTab,kerf,(aT?(aP/aT*100).toFixed(1):'0.0')+'%',`${((aT-aP)/1e6).toFixed(2)} m2 (${aT?((aT-aP)/aT*100).toFixed(1):'0.0'}%)`]);
+  doc.autoTable({
+    startY: 50, margin:{left:12,right:12}, theme:'grid',
+    head:[['Material','Espesor (mm)','Tablero (mm)','Piezas req.','Colocadas','Tableros','Kerf (mm)','Aprovech.','Desperdicio']],
+    body, styles:{fontSize:8, cellPadding:1.6}, headStyles:{fillColor:[15,23,42]},
+    didParseCell: d=>{ if(d.section==='body' && d.row.index===body.length-1){ d.cell.styles.fontStyle='bold'; d.cell.styles.fillColor=[226,232,240]; } }
+  });
+
+  let y = doc.lastAutoTable.finalY + 10;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  doc.text('Cantidad total de tableros necesarios por material', 12, y);
+  doc.autoTable({
+    startY: y+3, margin:{left:12,right:12}, theme:'striped',
+    head:[['Material','Espesor (mm)','Medida del tablero (mm)','Tableros necesarios']],
+    body: resumen.map(r=>[r.material, nf(r.espesor), r.medidas.replace(/,/g,''), r.tableros]).concat([['TOTAL','','',totTab]]),
+    styles:{fontSize:9, cellPadding:1.8}, headStyles:{fillColor:[37,99,235]},
+    didParseCell: d=>{ if(d.section==='body' && d.row.index===resumen.length){ d.cell.styles.fontStyle='bold'; } }
+  });
+  if(result.unplaced.length){
+    y = doc.lastAutoTable.finalY + 8;
+    doc.setFontSize(10); doc.setTextColor(220,38,38);
+    doc.text(`ATENCIÓN: ${result.unplaced.length} pieza(s) no se pudieron colocar`, 12, y);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+    const lst = result.unplaced.slice(0,12).map(p=>`- ${p.name} (${nf(p.w)} x ${nf(p.h)} mm, ${p.material}): ${p.reason||'sin tablero disponible'}`);
+    doc.text(lst, 12, y+5);
+    doc.setTextColor(15,23,42);
+  }
+
+  // ---------- Una página por tablero ----------
+  boards.forEach((b,idx)=>{
+    const board = b.board, info = infoTablero(boards, idx);
+    const orient = board.ancho > board.largo ? 'landscape' : 'portrait';
+    doc.addPage('a4', orient);
+    const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
+    const W = board.ancho, H = board.largo, m = margenTablero(board);
+    const piezas = b.placed.map((p,i)=>({...p, n:i+1}));
+    const area = piezas.reduce((s,p)=>s+p.w*p.h,0), aprov = (W*H)? area/(W*H)*100 : 0;
+    const rgbMat = hslAArreglo(hslColorFromString(board.material));
+
+    // Encabezado
+    doc.setFillColor(...rgbMat); doc.rect(0,0,pw,22,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(15,23,42);
+    doc.text(`Tablero ${info.numero} de ${info.total} - ${board.material} - espesor ${nf(board.espesor)} mm`, 10, 8);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+    doc.text(`Tablero ${info.secMat} de ${info.totMat} de este material | Medidas: ${nf(W)} x ${nf(H)} mm (ancho x largo) | Kerf: ${kerf} mm | Margen: ${nf(m)} mm`, 10, 14);
+    doc.text(`${piezas.length} piezas | Aprovechamiento ${aprov.toFixed(1)}% | Sobrante ${(100-aprov).toFixed(1)}% (${((W*H-area)/1e6).toFixed(2)} m2)`, 10, 19);
+
+    // Zona de dibujo
+    const leyenda = agruparLeyenda(piezas);
+    const legH = Math.min(12 + leyenda.length*4.6, ph*0.36);
+    const x0 = 22, y0 = 36;
+    const availW = pw - x0 - 12, availH = ph - y0 - 14 - legH;
+    const sc = Math.min(availW/W, availH/H);
+    const bw = W*sc, bh = H*sc, bx = x0 + (availW-bw)/2;
+
+    // Cotas
+    doc.setDrawColor(51,65,85); doc.setLineWidth(0.25); doc.setTextColor(15,23,42); doc.setFontSize(8); doc.setFont('helvetica','bold');
+    doc.line(bx, y0-4, bx+bw, y0-4); doc.line(bx, y0-5.5, bx, y0-2.5); doc.line(bx+bw, y0-5.5, bx+bw, y0-2.5);
+    doc.text(`${nf(W)} mm`, bx+bw/2, y0-6, {align:'center'});
+    doc.line(bx-5, y0, bx-5, y0+bh); doc.line(bx-6.5, y0, bx-3.5, y0); doc.line(bx-6.5, y0+bh, bx-3.5, y0+bh);
+    doc.text(`${nf(H)} mm`, bx-7, y0+bh/2, {align:'center', angle:90});
+
+    // Tablero + margen
+    doc.setFillColor(241,245,249); doc.setDrawColor(51,65,85); doc.setLineWidth(0.5);
+    doc.rect(bx, y0, bw, bh, 'FD');
+    doc.setDrawColor(148,163,184); doc.setLineWidth(0.15); doc.setLineDashPattern([1,1],0);
+    doc.rect(bx+m*sc, y0+m*sc, (W-2*m)*sc, (H-2*m)*sc); doc.setLineDashPattern([],0);
+
+    // Kerf (rojo) bajo las piezas
+    const kb = Math.max(kerf*sc, 0.3);
+    doc.setFillColor(239,68,68);
+    piezas.forEach(p=>{
+      const x = bx+p.x*sc, yy = y0+p.y*sc, w = p.w*sc, h = p.h*sc;
+      doc.rect(x+w, yy, kb, h+kb, 'F'); doc.rect(x, yy+h, w+kb, kb, 'F');
+    });
+    // Piezas
+    doc.setLineWidth(0.2); doc.setDrawColor(15,23,42);
+    piezas.forEach(p=>{
+      const x = bx+p.x*sc, yy = y0+p.y*sc, w = p.w*sc, h = p.h*sc;
+      doc.setFillColor(...hslAArreglo(hslColorFromString(p.material+p.name)));
+      doc.rect(x, yy, w, h, 'FD');
+      const dims = `${nf(p.w)}x${nf(p.h)}`;
+      const lay = textoPiezaPdf(doc, [
+        [{t:`#${p.n} ${p.name}`}, {t:dims, fijo:true}],
+        [{t:`#${p.n}`, fijo:true}, {t:dims, fijo:true}],
+        [{t:`#${p.n}`, fijo:true}]
+      ], w, h);
+      if(lay){
+        doc.setFontSize(lay.fs); doc.setTextColor(15,23,42);
+        const top = yy + h/2 - (lay.lines.length*lay.lh)/2 + lay.lh*0.75;
+        lay.lines.forEach((t,i)=>{ doc.setFont('helvetica', i===0?'bold':'normal'); doc.text(t, x+w/2, top+i*lay.lh, {align:'center'}); });
+      }
+    });
+
+    // Leyenda (tabla de piezas)
+    doc.autoTable({
+      startY: y0+bh+7, margin:{left:12,right:12,bottom:12}, theme:'grid',
+      head:[['#','Pieza','Cant.','Medida final (ancho x largo mm)','Medida original','Girada']],
+      body: leyenda.map(r=>[r.nums, r.name, r.cant, r.med, r.orig, r.girada]),
+      styles:{fontSize:7, cellPadding:1}, headStyles:{fillColor:[15,23,42]},
+      columnStyles:{0:{cellWidth:22},2:{cellWidth:12},5:{cellWidth:14}}
+    });
+    const fy = doc.lastAutoTable.finalY + 4;
+    if(fy < ph-13){
+      doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(71,85,105);
+      doc.text(`Franja roja = separación de sierra entre piezas (${kerf} mm). Zona gris = sobrante. Línea punteada = margen del tablero.`, 12, fy);
+    }
+  });
+
+  // Pie de página
+  const n = doc.getNumberOfPages();
+  for(let i=1;i<=n;i++){
+    doc.setPage(i);
+    const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(100,116,139);
+    doc.text(`Página ${i} de ${n}`, pw-12, ph-6, {align:'right'});
+    doc.text(`Optimización de corte - ${ctx.fecha}`, 12, ph-6);
+  }
+}
+// <<PDF-END
+
+$('btnPdfOptim').onclick = ()=>{
+  if(!STATE.bestResult){ toast('Ejecuta primero la optimización','error'); return; }
+  if(!window.jspdf){ toast('La librería de PDF no se ha cargado; revisa tu conexión','error'); return; }
+  try{
+    const doc = new window.jspdf.jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
+    const ahora = new Date();
+    const r = STATE.bestResult;
+    construirPdfOptimizacion(doc, r, {
+      fecha: ahora.toLocaleString('es-MX'),
+      proyecto: STATE.projectName || 'Sin guardar',
+      modo: (r.mode || 'mixto')
+    });
+    const pad = n=>String(n).padStart(2,'0');
+    doc.save(`optimizacion_corte_${ahora.getFullYear()}${pad(ahora.getMonth()+1)}${pad(ahora.getDate())}.pdf`);
+    toast('PDF de optimización generado','success');
+  }catch(e){
+    console.error(e);
+    toast('Error generando el PDF de optimización','error');
+  }
+};
+
+
 /* =========================================================
    HOJA DE CORTE
    ========================================================= */
