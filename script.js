@@ -285,6 +285,11 @@ function loadParamsUI(){
  * El kerf NO se suma a la pieza: se suma al espacio entre piezas al colocar.
  */
 function applyTolerance(p){
+  // Piezas importadas de Excel: tolerancia propia por eje (solo +número, ya validada).
+  if(p.tolAncho!==undefined || p.tolLargo!==undefined){
+    return { w: p.ancho + (p.tolAncho||0), h: p.largo + (p.tolLargo||0) };
+  }
+  // Piezas capturadas a mano: se conserva el comportamiento anterior.
   const tol = (STATE.params.tolPos||0);
   return { w: p.ancho + tol, h: p.largo + tol };
 }
@@ -1050,16 +1055,124 @@ $('btnGenSobrantes').onclick = ()=>{
 
 /* =========================================================
    IMPORTAR EXCEL
+   Reglas: solo entran los renglones cuya UNIDAD esté en la lista
+   válida (por defecto HOJA); las tolerancias solo se suman si la
+   celda tiene formato +número; ancho y largo se procesan por
+   separado; las medidas originales se conservan en la pieza.
    ========================================================= */
+
+// <<PURE-START (lógica sin DOM; se prueba por separado)
+const normTxt = s => String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+const round2 = n => Math.round(n*100)/100;
+
+/** Tolerancia válida solo si la celda es TEXTO con formato +número (ej. "+2", "+0.5").
+ *  Todo lo demás (vacío, 0, 2, -2, N/A, ESC, X, texto) = 0. */
+function parseTolerancia(raw){
+  if(typeof raw !== 'string') return 0;
+  const m = raw.trim().match(/^\+(\d+(?:\.\d+)?)$/);
+  return m ? parseFloat(m[1]) : 0;
+}
+
+function parseNum(raw){
+  if(typeof raw === 'number') return raw;
+  const s = String(raw==null?'':raw).trim().replace(',', '.');
+  return /^\d+(\.\d+)?$/.test(s) ? parseFloat(s) : NaN;
+}
+
+const IMPORT_FIELDS = [
+  {id:'mapNombre',   key:'nombre',   label:'Nombre',            auto:['description','descripcion','nombre','pieza']},
+  {id:'mapUnidad',   key:'unidad',   label:'Unidad',            auto:['unidad','unit']},
+  {id:'mapAncho',    key:'ancho',    label:'Ancho',             auto:['ancho','width']},
+  {id:'mapTolAncho', key:'tolAncho', label:'Ancho tolerancia',  auto:['ancho tolerancia','tolerancia ancho','tol ancho']},
+  {id:'mapLargo',    key:'largo',    label:'Largo',             auto:['largo','long','alto','height']},
+  {id:'mapTolLargo', key:'tolLargo', label:'Largo tolerancia',  auto:['largo tolerancia','tolerancia largo','tol largo']},
+  {id:'mapCant',     key:'cantidad', label:'Cantidad',          auto:['cant/mueble','cantidad','cant','qty']},
+  {id:'mapEspesor',  key:'espesor',  label:'Espesor / Grueso',  auto:['grueso','espesor','thickness']},
+  {id:'mapMaterial', key:'material', label:'Material',          auto:['material']},
+  {id:'mapVeta',     key:'veta',     label:'Veta',              auto:['veta','grain']}
+];
+
+function detectarColumna(cols, f){
+  const names = cols.map(normTxt);
+  const esTol = f.key.startsWith('tol');
+  for(const a of f.auto){ const i = names.indexOf(a); if(i>=0) return i; }
+  for(const a of f.auto){
+    const i = names.findIndex(n => n.includes(a) && (esTol || !n.includes('toler')));
+    if(i>=0) return i;
+  }
+  return -1;
+}
+
+/**
+ * Procesa las filas del Excel. No modifica el Excel ni STATE.
+ * map: {nombre,unidad,ancho,tolAncho,largo,tolLargo,cantidad,espesor,material,veta} -> índice de columna o -1
+ * opts: {unidades:['HOJA'], factor:10 (cm->mm), fileName}
+ */
+function procesarFilasExcel(rows, map, opts){
+  const unidades = (opts.unidades||[]).map(u=>u.trim().toUpperCase()).filter(Boolean);
+  const factor = opts.factor || 1;
+  const items = [], warnings = [];
+  if(map.unidad < 0) warnings.push('No se mapeó la columna Unidad: sin ella no se puede decidir qué renglones optimizar.');
+  if(!unidades.length) warnings.push('No hay unidades válidas definidas.');
+
+  for(let i=1;i<rows.length;i++){
+    const row = rows[i];
+    if(!row || row.every(c=>c===''||c==null)) continue;
+    const get = k => map[k]>=0 ? row[map[k]] : '';
+    const it = {
+      fila:i+1, nombre:String(get('nombre')||('Pieza '+i)).trim(),
+      unidad:String(get('unidad')).trim().toUpperCase(),
+      material:String(get('material')).trim(),
+      tolAnchoTxt:String(get('tolAncho')), tolLargoTxt:String(get('tolLargo')),
+      estado:'ok', motivo:''
+    };
+    items.push(it);
+    if(map.unidad < 0){ it.estado='ignorada'; it.motivo='Sin columna Unidad'; continue; }
+    if(!it.unidad){ it.estado='ignorada'; it.motivo='Unidad vacía'; warnings.push(`Fila ${it.fila}: unidad vacía, no se importa.`); continue; }
+    if(!unidades.includes(it.unidad)){ it.estado='ignorada'; it.motivo='Unidad '+it.unidad+' no optimizable'; continue; }
+
+    const ancho = parseNum(get('ancho')), largo = parseNum(get('largo'));
+    if(!(ancho>0) || !(largo>0)){ it.estado='error'; it.motivo='Falta ancho o largo'; warnings.push(`Fila ${it.fila}: falta ancho o largo.`); continue; }
+    if(!it.material){ it.estado='error'; it.motivo='Falta material'; warnings.push(`Fila ${it.fila}: falta material.`); continue; }
+
+    let cant = parseNum(get('cantidad'));
+    if(!(cant>0)){ it.estado='error'; it.motivo='Falta cantidad'; warnings.push(`Fila ${it.fila}: falta cantidad.`); continue; }
+    if(!Number.isInteger(cant)){ warnings.push(`Fila ${it.fila}: cantidad ${cant} no es entera, se redondea hacia arriba a ${Math.ceil(cant)}.`); cant = Math.ceil(cant); }
+
+    let esp = parseNum(get('espesor'));
+    if(esp>0) esp = round2(esp*factor);
+    else {
+      const m = it.material.match(/(\d+(?:\.\d+)?)\s*MM/i);
+      if(m) esp = parseFloat(m[1]); else esp = NaN;
+    }
+    if(!(esp>0)){ it.estado='error'; it.motivo='Falta espesor'; warnings.push(`Fila ${it.fila}: falta espesor.`); continue; }
+
+    const vetaRaw = normTxt(get('veta'));
+    const veta = vetaRaw.includes('largo') ? 'largo' : vetaRaw.includes('ancho') ? 'ancho' : 'ninguna';
+
+    it.ancho = round2(ancho*factor); it.largo = round2(largo*factor);
+    it.tolAncho = round2(parseTolerancia(get('tolAncho'))*factor);
+    it.tolLargo = round2(parseTolerancia(get('tolLargo'))*factor);
+    it.anchoFinal = round2(it.ancho + it.tolAncho); it.largoFinal = round2(it.largo + it.tolLargo);
+    it.cantidad = cant; it.espesor = esp; it.veta = veta;
+    it.srcKey = (opts.fileName||'excel') + '#' + it.fila;
+  }
+  return { items, warnings };
+}
+// <<PURE-END
+
+let _excelFileName = 'excel';
+
 $('excelFile').onchange = (e)=>{
   const file = e.target.files[0]; if(!file) return;
+  _excelFileName = file.name;
   const reader = new FileReader();
   reader.onload = evt=>{
     try{
       const data = new Uint8Array(evt.target.result);
       const wb = XLSX.read(data, {type:'array'});
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:'', raw:true});
       if(rows.length < 2){ toast('Archivo vacío o sin datos','error'); return; }
       STATE.excelRows = rows;
       STATE.excelCols = rows[0];
@@ -1074,18 +1187,9 @@ $('excelFile').onchange = (e)=>{
 
 function showExcelMapping(){
   const cols = STATE.excelCols;
-  const fields = [
-    {id:'mapNombre', label:'Nombre', auto:['nombre','pieza','descripcion','descripción']},
-    {id:'mapLargo', label:'Largo', auto:['largo','alto','height','long']},
-    {id:'mapAncho', label:'Ancho', auto:['ancho','width','wide']},
-    {id:'mapCant', label:'Cantidad', auto:['cantidad','cant','qty','qty.','cant.']},
-    {id:'mapEspesor', label:'Espesor', auto:['espesor','thickness','esp']},
-    {id:'mapMaterial', label:'Material', auto:['material','mat']},
-    {id:'mapVeta', label:'Veta', auto:['veta','grain']}
-  ];
   const container = $('excelMapFields');
   container.innerHTML = '';
-  fields.forEach(f=>{
+  IMPORT_FIELDS.forEach(f=>{
     const label = document.createElement('label');
     label.textContent = f.label;
     const sel = document.createElement('select');
@@ -1096,87 +1200,123 @@ function showExcelMapping(){
       opt.value = i; opt.textContent = c || ('Col '+(i+1));
       sel.appendChild(opt);
     });
-    // Auto-detectar
-    const idx = cols.findIndex(c=>{
-      const s = String(c).toLowerCase().trim();
-      return f.auto.some(a=>s.includes(a));
-    });
+    const idx = detectarColumna(cols, f);
     if(idx>=0) sel.value = idx;
     label.appendChild(sel);
     container.appendChild(label);
   });
   $('excelMapCard').style.display='block';
-  updateExcelPreview();
   document.querySelectorAll('#excelMapFields select').forEach(s=>s.onchange = updateExcelPreview);
+  $('impUnidades').oninput = updateExcelPreview;
+  $('impUnidadMedida').onchange = updateExcelPreview;
+  updateExcelPreview();
+}
+
+function getImportMapping(){
+  const m = {};
+  IMPORT_FIELDS.forEach(f=>{ const el=$(f.id); m[f.key] = el ? +el.value : -1; });
+  return m;
+}
+function getImportOpts(){
+  return {
+    unidades: $('impUnidades').value.split(','),
+    factor: +$('impUnidadMedida').value || 1,
+    fileName: _excelFileName
+  };
 }
 
 function updateExcelPreview(){
   const rows = STATE.excelRows; if(!rows) return;
   const cols = STATE.excelCols;
-  const mapping = {
-    nombre: +$('mapNombre').value,
-    largo: +$('mapLargo').value,
-    ancho: +$('mapAncho').value,
-    cantidad: +$('mapCant').value,
-    espesor: +$('mapEspesor').value,
-    material: +$('mapMaterial').value,
-    veta: +$('mapVeta').value
-  };
+  const mapping = getImportMapping();
+
+  // Vista previa del Excel original (sin modificar)
   const thead = $('excelPreviewTable').querySelector('thead');
   const tbody = $('excelPreviewTable').querySelector('tbody');
   thead.innerHTML = '<tr>' + cols.map(c=>`<th>${escapeHtml(String(c))}</th>`).join('') + '</tr>';
   tbody.innerHTML = '';
+  const mapped = Object.values(mapping);
   for(let i=1;i<Math.min(rows.length, 30);i++){
     const tr = document.createElement('tr');
     tr.innerHTML = rows[i].map((c,j)=>{
       const val = c===undefined?'':c;
-      const isMapped = Object.values(mapping).includes(j);
-      return `<td style="${isMapped?'background:#f0f9ff':''}">${escapeHtml(String(val))}</td>`;
+      return `<td style="${mapped.includes(j)?'background:#f0f9ff':''}">${escapeHtml(String(val))}</td>`;
     }).join('');
     tbody.appendChild(tr);
   }
   $('excelRowCount').textContent = `(${rows.length-1} filas detectadas)`;
   $('excelPreviewCard').style.display='block';
+
+  // Revisión previa: qué renglones entran y con qué medidas
+  const res = procesarFilasExcel(rows, mapping, getImportOpts());
+  const ok = res.items.filter(x=>x.estado==='ok');
+  const ign = res.items.filter(x=>x.estado==='ignorada').length;
+  const err = res.items.filter(x=>x.estado==='error').length;
+  const piezasTot = ok.reduce((s,x)=>s+x.cantidad,0);
+  $('excelWarnings').innerHTML =
+    `<b>${ok.length}</b> renglones entran a optimización (${piezasTot} piezas) · ${ign} ignorados por unidad · ${err} con error` +
+    (res.warnings.length ? '<br>⚠️ ' + res.warnings.slice(0,12).map(escapeHtml).join('<br>⚠️ ') + (res.warnings.length>12?`<br>… y ${res.warnings.length-12} más`:'') : '');
+  $('excelReviewTable').querySelector('thead').innerHTML =
+    '<tr><th>Fila</th><th>Descripción</th><th>Unidad</th><th>Material</th><th>Esp. (mm)</th><th>Cant.</th>'+
+    '<th>Ancho orig → final</th><th>Tol. ancho</th><th>Largo orig → final</th><th>Tol. largo</th><th>Estado</th></tr>';
+  const rb = $('excelReviewTable').querySelector('tbody');
+  rb.innerHTML = '';
+  res.items.slice(0,400).forEach(x=>{
+    const tr = document.createElement('tr');
+    const bg = x.estado==='ignorada' ? '#f1f5f9;color:#94a3b8' : x.estado==='error' ? '#fee2e2' : '';
+    tr.style.cssText = bg ? 'background:'+bg : '';
+    const med = (o,f,t)=> x.estado==='ok' ? `${fmt(o,1)} → <b>${fmt(f,1)}</b>` : '';
+    tr.innerHTML = `<td>${x.fila}</td><td>${escapeHtml(x.nombre)}</td><td>${escapeHtml(x.unidad)}</td><td>${escapeHtml(x.material)}</td>`+
+      `<td>${x.estado==='ok'?fmt(x.espesor,1):''}</td><td>${x.estado==='ok'?x.cantidad:''}</td>`+
+      `<td>${med(x.ancho,x.anchoFinal)}</td><td>${escapeHtml(x.tolAnchoTxt)}</td>`+
+      `<td>${med(x.largo,x.largoFinal)}</td><td>${escapeHtml(x.tolLargoTxt)}</td>`+
+      `<td>${x.estado==='ok'?'✅ Entra':x.estado==='ignorada'?escapeHtml(x.motivo):'❌ '+escapeHtml(x.motivo)}</td>`;
+    rb.appendChild(tr);
+  });
+  $('excelReviewCard').style.display='block';
+}
+
+function ensureOption(selId, value){
+  const sel = $(selId); if(!sel) return;
+  if(![...sel.options].some(o=>o.value===value || o.text===value)){
+    const o = document.createElement('option'); o.textContent = value; sel.appendChild(o);
+  }
 }
 
 $('btnConfirmImport').onclick = ()=>{
   const rows = STATE.excelRows; if(!rows) return;
-  const mapping = {
-    nombre: +$('mapNombre').value,
-    largo: +$('mapLargo').value,
-    ancho: +$('mapAncho').value,
-    cantidad: +$('mapCant').value,
-    espesor: +$('mapEspesor').value,
-    material: +$('mapMaterial').value,
-    veta: +$('mapVeta').value
-  };
-  let count = 0, errors = 0;
-  for(let i=1;i<rows.length;i++){
-    const row = rows[i];
-    if(!row || row.length===0) continue;
-    const get = k => mapping[k]>=0 ? row[mapping[k]] : undefined;
-    const largo = parseFloat(get('largo'));
-    const ancho = parseFloat(get('ancho'));
-    if(isNaN(largo) || isNaN(ancho) || largo<=0 || ancho<=0){ errors++; continue; }
-    const cant = parseFloat(get('cantidad')) || 1;
-    const esp = parseFloat(get('espesor')) || 18;
-    const vetaRaw = String(get('veta')||'').toLowerCase();
-    let veta = 'ninguna';
-    if(vetaRaw.includes('largo')) veta = 'largo';
-    else if(vetaRaw.includes('ancho')) veta = 'ancho';
-    const pieza = {
-      id: uid(),
-      nombre: String(get('nombre')||('Pieza '+(i))).trim(),
-      largo, ancho, cantidad: cant, espesor: esp,
-      material: String(get('material')||'Melamina').trim(),
-      veta, rot: veta==='ninguna' ? true : false,
-      obs: ''
-    };
-    STATE.piezas.push(pieza);
+  const res = procesarFilasExcel(rows, getImportMapping(), getImportOpts());
+  const ok = res.items.filter(x=>x.estado==='ok');
+  const errores = res.items.filter(x=>x.estado==='error').length;
+  const existentes = new Set(STATE.piezas.map(p=>p.srcKey).filter(Boolean));
+  let count = 0, dup = 0;
+  const combos = new Set();
+  ok.forEach(x=>{
+    if(existentes.has(x.srcKey)){ dup++; return; }
+    STATE.piezas.push({
+      id: uid(), nombre: x.nombre, largo: x.largo, ancho: x.ancho,
+      cantidad: x.cantidad, espesor: x.espesor, material: x.material,
+      veta: x.veta, rot: x.veta==='ninguna', obs: '',
+      unidad: x.unidad, tolAncho: x.tolAncho, tolLargo: x.tolLargo,
+      tolAnchoTxt: x.tolAnchoTxt, tolLargoTxt: x.tolLargoTxt, srcKey: x.srcKey
+    });
+    ensureOption('pMaterial', x.material); ensureOption('tMaterial', x.material);
+    combos.add(x.material+'|'+x.espesor);
     count++;
-  }
-  renderPiezas();
-  toast(`Importadas ${count} piezas${errors?` (${errors} con errores)`:''}`, errors?'error':'success');
+  });
+  // Tablero estándar 2440×1220 para cada material/espesor sin tablero registrado
+  let nuevos = 0;
+  combos.forEach(k=>{
+    const [mat, esp] = k.split('|'); const e = +esp;
+    if(!STATE.tableros.some(t=>t.material===mat && +t.espesor===e)){
+      STATE.tableros.push({id:uid(), nombre:`${mat} (auto)`, material:mat, largo:2440, ancho:1220,
+        espesor:e, precio:0, color:'#c8a878', veta:'largo', cantidad:50, margen:0});
+      nuevos++;
+    }
+  });
+  renderPiezas(); renderTableros();
+  const msg = `Importadas ${count} piezas` + (dup?` · ${dup} ya existían`:'') + (errores?` · ${errores} con error`:'') + (nuevos?` · ${nuevos} tableros 2440×1220 creados`:'');
+  toast(msg, errores?'error':'success');
 };
 
 /* =========================================================
