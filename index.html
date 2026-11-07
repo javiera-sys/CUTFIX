@@ -4,7 +4,180 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OptiCorte Pro -- Optimizador Inteligente de Tableros</title>
-<link rel="stylesheet" href="styles.css">
+<style>
+/* ============ RESET & BASE ============ */
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f4f6f9; --panel:#ffffff; --ink:#1e2733; --muted:#6b7685;
+  --line:#e3e8ef; --primary:#2563eb; --primary-d:#1d4ed8;
+  --accent:#16a34a; --warn:#d97706; --danger:#dc2626;
+  --shadow:0 1px 3px rgba(16,24,40,.08),0 4px 12px rgba(16,24,40,.05);
+  --radius:10px;
+}
+html,body{height:100%}
+body{
+  font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  background:var(--bg); color:var(--ink);
+  display:flex; min-height:100vh; font-size:14px;
+}
+button{font-family:inherit;cursor:pointer}
+input,select{font-family:inherit;font-size:13px}
+
+/* ============ SIDEBAR ============ */
+.sidebar{
+  width:260px; background:#0f172a; color:#cbd5e1;
+  display:flex; flex-direction:column;
+  position:fixed; top:0; left:0; bottom:0; z-index:100;
+  transition:transform .25s;
+}
+.brand{display:flex;gap:12px;align-items:center;padding:20px 18px;border-bottom:1px solid #1e293b}
+.brand-icon{background:var(--primary);width:40px;height:40px;border-radius:10px;
+  display:grid;place-items:center;font-size:20px;color:#fff}
+.brand h1{font-size:17px;color:#fff;line-height:1.1}
+.brand h1 span{color:#60a5fa}
+.brand small{font-size:11px;color:#94a3b8}
+.nav{flex:1;overflow-y:auto;padding:12px 8px;display:flex;flex-direction:column;gap:2px}
+.nav-btn{
+  background:transparent;border:none;color:#cbd5e1;
+  padding:10px 14px;border-radius:8px;text-align:left;
+  display:flex;gap:10px;align-items:center;font-size:13.5px;
+  transition:background .15s,color .15s;
+}
+.nav-btn:hover{background:#1e293b;color:#fff}
+.nav-btn.active{background:var(--primary);color:#fff;font-weight:600}
+.sidebar-footer{padding:14px;border-top:1px solid #1e293b;display:flex;flex-direction:column;gap:6px}
+.proj-info{font-size:11.5px;color:#94a3b8;margin-bottom:4px}
+
+/* ============ MAIN ============ */
+.main{flex:1;margin-left:260px;padding:24px 28px 60px;min-width:0}
+.sec-header{margin-bottom:20px}
+.sec-header h2{font-size:22px;margin-bottom:4px}
+.sec-header p{color:var(--muted);font-size:13.5px}
+.section{display:none;animation:fade .25s}
+.section.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ============ CARDS ============ */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:20px;margin-bottom:18px;box-shadow:var(--shadow)}
+.card h3{font-size:15px;margin-bottom:14px;color:#0f172a}
+.grid-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:18px}
+.stat{text-align:center}
+.stat h3{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.stat-num{font-size:26px;font-weight:700;color:var(--primary);margin:6px 0}
+.stat small{color:var(--muted);font-size:11px}
+.steps{margin-left:20px;line-height:2;font-size:13.5px}
+
+/* ============ FORMS ============ */
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.form-grid label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:#374151;font-weight:500}
+.form-grid input,.form-grid select{
+  padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:#fff;
+  transition:border .15s,box-shadow .15s;
+}
+.form-grid input:focus,.form-grid select:focus{
+  outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.12);
+}
+.form-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+
+/* ============ BUTTONS ============ */
+.btn{border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;
+  transition:transform .1s,background .15s,box-shadow .15s}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-d)}
+.btn-outline{background:#fff;border:1px solid var(--line);color:#374151}
+.btn-outline:hover{background:#f8fafc;border-color:#cbd5e1}
+.btn-ghost{background:transparent;color:var(--muted)}
+.btn-ghost:hover{color:var(--ink)}
+.btn-sm{padding:6px 11px;font-size:12px}
+.btn-xl{padding:16px 32px;font-size:16px;width:100%}
+.btn-group{display:flex;gap:6px;flex-wrap:wrap}
+
+/* ============ TABLES ============ */
+.table-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.table-wrap{overflow-x:auto;border-radius:8px;border:1px solid var(--line)}
+.data-table{width:100%;border-collapse:collapse;font-size:12.5px;background:#fff}
+.data-table th{background:#f8fafc;padding:10px;text-align:left;font-weight:600;
+  color:#475569;border-bottom:2px solid var(--line);white-space:nowrap;font-size:11.5px;text-transform:uppercase;letter-spacing:.3px}
+.data-table td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+.data-table tr:hover td{background:#f8fafc}
+.data-table tr:last-child td{border-bottom:none}
+.data-table .actions{display:flex;gap:4px}
+.icon-btn{background:transparent;border:none;padding:4px 6px;border-radius:5px;font-size:13px}
+.icon-btn:hover{background:#f1f5f9}
+.icon-btn.del:hover{background:#fee2e2;color:var(--danger)}
+
+/* ============ HINTS ============ */
+.hint{font-size:12px;color:var(--muted);margin-top:10px;padding:8px 12px;
+  background:#f8fafc;border-left:3px solid var(--primary);border-radius:4px}
+
+/* ============ PROGRESS ============ */
+.progress-bar{height:8px;background:#e2e8f0;border-radius:99px;margin-top:14px;overflow:hidden}
+.progress-bar div{height:100%;width:0;background:var(--primary);transition:width .3s}
+
+/* ============ TOAST ============ */
+.toast{
+  position:fixed;bottom:24px;right:24px;background:#0f172a;color:#fff;
+  padding:12px 18px;border-radius:9px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.2);
+  opacity:0;transform:translateY(12px);pointer-events:none;transition:all .25s;z-index:999;max-width:340px;
+}
+.toast.show{opacity:1;transform:none}
+.toast.error{background:var(--danger)}
+.toast.success{background:var(--accent)}
+
+/* ============ COMPARACIÓN ============ */
+.best-mode{
+  margin-top:16px;padding:14px 18px;background:linear-gradient(90deg,#ecfdf5,#f0fdf4);
+  border:1px solid #86efac;border-radius:9px;font-weight:600;color:#166534;
+}
+tr.best-row td{background:#ecfdf5 !important;font-weight:600}
+
+/* ============ PLANOS ============ */
+.planos-toolbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+.planos-toolbar label{display:inline-flex;align-items:center;gap:6px;margin-right:12px;font-size:12.5px;color:#374151}
+.plano-container{overflow:auto;background:#fafbfc;border-radius:8px;padding:16px;min-height:300px;
+  display:flex;justify-content:center;align-items:flex-start}
+.plano-svg{background:#fff;border:1px solid #cbd5e1;border-radius:6px;
+  box-shadow:0 4px 16px rgba(0,0,0,.06);transition:transform .15s;max-width:100%}
+.empty-msg{color:var(--muted);font-size:13.5px;text-align:center;padding:40px}
+
+/* ============ HOJA DE CORTE ============ */
+.hoja-output{margin-top:20px}
+.hoja-doc{background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+  padding:28px;margin-bottom:20px;box-shadow:var(--shadow);page-break-after:always}
+.hoja-doc h2{border-bottom:2px solid var(--primary);padding-bottom:8px;margin-bottom:14px;font-size:18px}
+.hoja-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px 20px;
+  font-size:12.5px;margin-bottom:16px}
+.hoja-meta b{color:#0f172a}
+.hoja-meta .row{display:flex;justify-content:space-between;border-bottom:1px dotted #e2e8f0;padding:4px 0}
+
+/* ============ MENÚ MÓVIL ============ */
+.menu-toggle{
+  display:none;position:fixed;top:14px;left:14px;z-index:150;
+  background:var(--primary);color:#fff;border:none;width:44px;height:44px;
+  border-radius:9px;font-size:20px;box-shadow:0 2px 8px rgba(0,0,0,.2);
+}
+
+/* ============ RESPONSIVE ============ */
+@media(max-width:900px){
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.open{transform:none}
+  .main{margin-left:0;padding:18px;padding-top:70px}
+  .menu-toggle{display:block !important}
+  .planos-toolbar{flex-direction:column;align-items:flex-start}
+}
+
+/* ============ PRINT ============ */
+@media print{
+  .sidebar,.sec-header,.no-print,.btn,.toast,.menu-toggle{display:none !important}
+  .main{margin:0;padding:0}
+  .section{display:none !important}
+  .section.active{display:block !important}
+  .hoja-doc{box-shadow:none;border:none;page-break-after:always}
+  body{background:#fff}
+}
+</style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js" defer></script>
@@ -429,6 +602,1837 @@
 </main>
 
 <div id="toast" class="toast"></div>
-<script src="Script.js"></script>
+<script>
+/* =========================================================
+   OptiCorte Pro -- Motor de optimización y UI
+   Autor: Sistema original (basado en conceptos públicos de
+   Guillotine bin packing y MaxRects).
+   ========================================================= */
+
+/* ---------- ESTADO GLOBAL ---------- */
+const STATE = {
+  tableros: [],
+  piezas: [],
+  sobrantes: [],
+  params: { kerf:3, tolPos:0, tolNeg:0, margenPer:10, sepMin:3, margenSeg:0, comp:0, rotGlobal:false, veta:true, criterio:'tableros' },
+  lastResult: null,
+  editTabId: null,
+  editPiezaId: null,
+  excelRows: null,
+  excelCols: null,
+  zoom: 1,
+  projectName: 'Sin guardar'
+};
+
+const uid = () => '_' + Math.random().toString(36).slice(2,10);
+const $ = id => document.getElementById(id);
+const fmt = (n,d=0) => Number(n).toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d});
+
+/* ---------- TOAST ---------- */
+function toast(msg, type='info'){
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (type==='error'?'error':type==='success'?'success':'');
+  clearTimeout(t._to);
+  t._to = setTimeout(()=>t.classList.remove('show'), 2600);
+}
+
+/* ---------- NAVEGACIÓN ---------- */
+document.querySelectorAll('.nav-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+    btn.classList.add('active');
+    const sec = $('sec-' + btn.dataset.section);
+    if(sec) sec.classList.add('active');
+    if(window.innerWidth <= 900) $('sidebar').classList.remove('open');
+  });
+});
+
+/* ---------- MENÚ MÓVIL ---------- */
+const menuToggle = document.createElement('button');
+menuToggle.className='menu-toggle'; menuToggle.textContent='☰';
+document.body.appendChild(menuToggle);
+menuToggle.onclick=()=>$('sidebar').classList.toggle('open');
+
+/* =========================================================
+   TABLEROS
+   ========================================================= */
+function renderTableros(){
+  const tbody = $('tablaTableros').querySelector('tbody');
+  tbody.innerHTML = '';
+  STATE.tableros.forEach(t=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(t.nombre)}</td>
+      <td>${t.material}</td>
+      <td>${t.largo}</td>
+      <td>${t.ancho}</td>
+      <td>${t.espesor}</td>
+      <td>$${fmt(t.precio,2)}</td>
+      <td><span style="display:inline-block;width:16px;height:16px;border-radius:4px;border:1px solid #ccc;background:${t.color}"></span></td>
+      <td>${t.veta}</td>
+      <td>${t.cantidad}</td>
+      <td class="actions">
+        <button class="icon-btn" data-edit="${t.id}" title="Editar">✏️</button>
+        <button class="icon-btn" data-dup="${t.id}" title="Duplicar">⧉</button>
+        <button class="icon-btn del" data-del="${t.id}" title="Eliminar">🗑</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>loadTableroForm(b.dataset.edit));
+  tbody.querySelectorAll('[data-dup]').forEach(b=>b.onclick=()=>{dupTablero(b.dataset.dup);});
+  tbody.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{delTablero(b.dataset.del);});
+  $('statTableros').textContent = STATE.tableros.reduce((a,t)=>a+t.cantidad,0);
+  saveAuto();
+}
+
+function loadTableroForm(id){
+  const t = STATE.tableros.find(x=>x.id===id); if(!t) return;
+  $('tNombre').value=t.nombre; $('tMaterial').value=t.material;
+  $('tLargo').value=t.largo; $('tAncho').value=t.ancho;
+  $('tEspesor').value=t.espesor; $('tPrecio').value=t.precio;
+  $('tColor').value=t.color; $('tVeta').value=t.veta;
+  $('tCantidad').value=t.cantidad; $('tMargen').value=t.margen||0;
+  STATE.editTabId=id;
+  $('btnAddTablero').textContent='💾 Actualizar tablero';
+  $('btnCancelTablero').style.display='inline-block';
+}
+
+function clearTableroForm(){
+  $('tNombre').value=''; $('tLargo').value=2440; $('tAncho').value=1220;
+  $('tEspesor').value=18; $('tPrecio').value=0; $('tColor').value='#c8a878';
+  $('tVeta').value='largo'; $('tCantidad').value=10; $('tMargen').value=0;
+  STATE.editTabId=null;
+  $('btnAddTablero').textContent='➕ Agregar tablero';
+  $('btnCancelTablero').style.display='none';
+}
+
+$('btnAddTablero').onclick = ()=>{
+  const t = {
+    id: STATE.editTabId || uid(),
+    nombre: $('tNombre').value.trim() || 'Tablero',
+    material: $('tMaterial').value,
+    largo: +$('tLargo').value,
+    ancho: +$('tAncho').value,
+    espesor: +$('tEspesor').value,
+    precio: +$('tPrecio').value,
+    color: $('tColor').value,
+    veta: $('tVeta').value,
+    cantidad: +$('tCantidad').value,
+    margen: +$('tMargen').value
+  };
+  if(t.largo<=0 || t.ancho<=0){ toast('Dimensiones inválidas','error'); return; }
+  if(STATE.editTabId){
+    const i = STATE.tableros.findIndex(x=>x.id===t.id);
+    STATE.tableros[i]=t;
+    toast('Tablero actualizado','success');
+  } else {
+    STATE.tableros.push(t);
+    toast('Tablero agregado','success');
+  }
+  clearTableroForm(); renderTableros();
+};
+$('btnCancelTablero').onclick = ()=>{ clearTableroForm(); };
+function dupTablero(id){
+  const t = STATE.tableros.find(x=>x.id===id); if(!t) return;
+  STATE.tableros.push({...t, id:uid(), nombre:t.nombre+' (copia)'});
+  renderTableros(); toast('Tablero duplicado','success');
+}
+function delTablero(id){
+  if(!confirm('¿Eliminar tablero?')) return;
+  STATE.tableros = STATE.tableros.filter(x=>x.id!==id);
+  renderTableros(); toast('Tablero eliminado');
+}
+
+/* =========================================================
+   PIEZAS
+   ========================================================= */
+function renderPiezas(){
+  const tbody = $('tablaPiezas').querySelector('tbody');
+  tbody.innerHTML = '';
+  STATE.piezas.forEach((p,i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${i+1}</td>
+      <td>${escapeHtml(p.nombre)}</td>
+      <td>${p.largo}</td>
+      <td>${p.ancho}</td>
+      <td>${p.cantidad}</td>
+      <td>${p.espesor}</td>
+      <td>${p.material}</td>
+      <td>${p.veta}</td>
+      <td>${p.rot?'Sí':'No'}</td>
+      <td>${escapeHtml(p.obs||'')}</td>
+      <td class="actions">
+        <button class="icon-btn" data-edit="${p.id}">✏️</button>
+        <button class="icon-btn" data-dup="${p.id}">⧉</button>
+        <button class="icon-btn del" data-del="${p.id}">🗑</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>loadPiezaForm(b.dataset.edit));
+  tbody.querySelectorAll('[data-dup]').forEach(b=>b.onclick=()=>{
+    const p = STATE.piezas.find(x=>x.id===b.dataset.dup);
+    STATE.piezas.push({...p, id:uid()}); renderPiezas();
+  });
+  tbody.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
+    STATE.piezas = STATE.piezas.filter(x=>x.id!==b.dataset.del); renderPiezas();
+  });
+  const totalP = STATE.piezas.reduce((a,p)=>a+p.cantidad,0);
+  $('countPiezas').textContent = totalP;
+  $('statPiezas').textContent = totalP;
+  saveAuto();
+}
+
+function loadPiezaForm(id){
+  const p = STATE.piezas.find(x=>x.id===id); if(!p) return;
+  $('pNombre').value=p.nombre; $('pLargo').value=p.largo; $('pAncho').value=p.ancho;
+  $('pCant').value=p.cantidad; $('pEspesor').value=p.espesor;
+  $('pMaterial').value=p.material; $('pVeta').value=p.veta;
+  $('pRot').value=p.rot?'true':'false'; $('pObs').value=p.obs||'';
+  STATE.editPiezaId=id;
+  $('btnAddPieza').textContent='💾 Actualizar pieza';
+  $('btnCancelPieza').style.display='inline-block';
+}
+function clearPiezaForm(){
+  $('pNombre').value=''; $('pLargo').value=0; $('pAncho').value=0;
+  $('pCant').value=1; $('pEspesor').value=18; $('pMaterial').value='Melamina';
+  $('pVeta').value='ninguna'; $('pRot').value='true'; $('pObs').value='';
+  STATE.editPiezaId=null;
+  $('btnAddPieza').textContent='➕ Agregar pieza';
+  $('btnCancelPieza').style.display='none';
+}
+
+$('btnAddPieza').onclick = ()=>{
+  const p = {
+    id: STATE.editPiezaId || uid(),
+    nombre: $('pNombre').value.trim() || 'Pieza',
+    largo: +$('pLargo').value,
+    ancho: +$('pAncho').value,
+    cantidad: +$('pCant').value,
+    espesor: +$('pEspesor').value,
+    material: $('pMaterial').value,
+    veta: $('pVeta').value,
+    rot: $('pRot').value === 'true',
+    obs: $('pObs').value.trim()
+  };
+  if(p.largo<=0 || p.ancho<=0){ toast('Dimensiones inválidas','error'); return; }
+  if(p.cantidad<=0){ toast('Cantidad inválida','error'); return; }
+  if(STATE.editPiezaId){
+    const i = STATE.piezas.findIndex(x=>x.id===p.id);
+    STATE.piezas[i]=p; toast('Pieza actualizada','success');
+  } else {
+    STATE.piezas.push(p); toast('Pieza agregada','success');
+  }
+  clearPiezaForm(); renderPiezas();
+};
+$('btnCancelPieza').onclick = clearPiezaForm;
+$('btnClearPiezas').onclick = ()=>{
+  if(!confirm('¿Eliminar todas las piezas?')) return;
+  STATE.piezas=[]; renderPiezas();
+};
+$('btnEjemplo').onclick = ()=>{
+  const ej=[
+    {nombre:'Lateral izq.',largo:600,ancho:400,cantidad:2,espesor:18,material:'Melamina',veta:'largo',rot:false,obs:''},
+    {nombre:'Lateral der.',largo:600,ancho:400,cantidad:2,espesor:18,material:'Melamina',veta:'largo',rot:false,obs:''},
+    {nombre:'Tapa superior',largo:800,ancho:400,cantidad:1,espesor:18,material:'Melamina',veta:'largo',rot:false,obs:''},
+    {nombre:'Base',largo:800,ancho:400,cantidad:1,espesor:18,material:'Melamina',veta:'largo',rot:false,obs:''},
+    {nombre:'Entrepaño',largo:760,ancho:380,cantidad:2,espesor:18,material:'Melamina',veta:'ninguna',rot:true,obs:''},
+    {nombre:'Puerta',largo:700,ancho:390,cantidad:2,espesor:18,material:'Melamina',veta:'largo',rot:false,obs:''},
+    {nombre:'Trasera',largo:800,ancho:600,cantidad:1,espesor:3,material:'MDF',veta:'ninguna',rot:true,obs:''}
+  ];
+  ej.forEach(p=>STATE.piezas.push({...p,id:uid()}));
+  renderPiezas(); toast('Ejemplo cargado','success');
+};
+
+/* =========================================================
+   PARÁMETROS
+   ========================================================= */
+function bindParams(){
+  const map = {
+    prKerf:'kerf', prTolPos:'tolPos', prTolNeg:'tolNeg', prMargenPer:'margenPer',
+    prSepMin:'sepMin', prMargenSeg:'margenSeg', prComp:'comp',
+    prRotGlobal:'rotGlobal', prVeta:'veta', prCriterio:'criterio'
+  };
+  Object.entries(map).forEach(([elId,key])=>{
+    const el = $(elId);
+    el.addEventListener('input', ()=>{
+      let v = el.value;
+      if(['rotGlobal','veta'].includes(key)) v = (v==='true');
+      else if(key!=='criterio') v = +v||0;
+      STATE.params[key]=v; saveAuto();
+    });
+  });
+}
+function loadParamsUI(){
+  $('prKerf').value=STATE.params.kerf;
+  $('prTolPos').value=STATE.params.tolPos;
+  $('prTolNeg').value=STATE.params.tolNeg;
+  $('prMargenPer').value=STATE.params.margenPer;
+  $('prSepMin').value=STATE.params.sepMin;
+  $('prMargenSeg').value=STATE.params.margenSeg;
+  $('prComp').value=STATE.params.comp;
+  $('prRotGlobal').value=String(STATE.params.rotGlobal);
+  $('prVeta').value=String(STATE.params.veta);
+  $('prCriterio').value=STATE.params.criterio;
+}
+
+/* =========================================================
+   MOTOR DE OPTIMIZACIÓN
+   ========================================================= */
+
+/**
+ * Aplica tolerancias a una pieza (una sola vez).
+ * Retorna {w, h} efectivos en mm.
+ * Regla: se aplica tolPos a las dimensiones externas (pieza más grande),
+ * y tolNeg se considera como reducción del margen útil entre piezas.
+ * El kerf NO se suma a la pieza: se suma al espacio entre piezas al colocar.
+ */
+// <<ALGO-START (sin DOM; se prueba por separado)
+function applyTolerance(p){
+  // Piezas importadas de Excel: tolerancia propia por eje (solo +número, ya validada).
+  if(p.tolAncho!==undefined || p.tolLargo!==undefined){
+    return { w: p.ancho + (p.tolAncho||0), h: p.largo + (p.tolLargo||0) };
+  }
+  // Piezas capturadas a mano: se conserva el comportamiento anterior.
+  const tol = (STATE.params.tolPos||0);
+  return { w: p.ancho + tol, h: p.largo + tol };
+}
+
+/**
+ * Expande piezas en unidades individuales por material+espesor.
+ */
+function expandPieces(){
+  const grouped = {};
+  STATE.piezas.forEach(p=>{
+    const key = p.material+'|'+p.espesor;
+    if(!grouped[key]) grouped[key] = {material:p.material, espesor:p.espesor, pieces:[]};
+    for(let i=0;i<p.cantidad;i++){
+      const dim = applyTolerance(p);
+      grouped[key].pieces.push({
+        id: p.id + '_' + i,
+        name: p.nombre,
+        origId: p.id,
+        w: dim.w, h: dim.h,
+        ow: p.ancho, oh: p.largo,
+        veta: p.veta,
+        rot: p.rot && !STATE.params.rotGlobal,
+        material: p.material,
+        espesor: p.espesor
+      });
+    }
+  });
+  return grouped;
+}
+
+/**
+ * Filtra tableros disponibles para un material+espesor.
+ */
+function getTablerosFor(material, espesor){
+  const list = STATE.tableros.filter(t => t.material===material && +t.espesor === +espesor);
+  const expanded = [];
+  list.forEach(t=>{ for(let i=0;i<t.cantidad;i++) expanded.push({...t, instanceIdx:i}); });
+  return expanded;
+}
+
+/** Margen total por lado de un tablero. */
+function margenTablero(board){
+  return STATE.params.margenPer + (board.margen||0) + STATE.params.margenSeg;
+}
+
+/**
+ * Orientaciones permitidas de una pieza (rotación y veta). Una sola regla para todos los modos.
+ * veta 'largo' -> solo normal; veta 'ancho' -> solo girada (si el control de veta está activo).
+ */
+function orientaciones(piece){
+  const normal = {w:piece.w, h:piece.h, rot:false};
+  const girada = {w:piece.h, h:piece.w, rot:true};
+  if(STATE.params.veta){
+    if(piece.veta==='largo') return [normal];
+    if(piece.veta==='ancho') return [girada];
+  }
+  return piece.rot ? [normal, girada] : [normal];
+}
+
+/** ¿Cabe la pieza en el tablero (con márgenes), en alguna orientación permitida? */
+function pieceFitsInBoard(p, board){
+  const m = margenTablero(board);
+  const availW = board.ancho - 2*m;
+  const availH = board.largo - 2*m;
+  return orientaciones(p).some(o => o.w <= availW + 1e-9 && o.h <= availH + 1e-9);
+}
+
+/* =========================================================
+   MODO 1: GUILLOTINE
+   ========================================================= */
+/**
+ * Guillotine: cada pieza se coloca en la región libre donde mejor encaja
+ * (menor sobrante del lado corto) y la región se divide en dos con un corte
+ * de sierra (kerf) entre pieza y sobrante. Si una pieza no cabe, se intenta
+ * con las siguientes (antes se detenía en la primera que no cabía).
+ * opts.keepOrder = true respeta el orden recibido (lo usa el modo mixto).
+ */
+function optimizeGuillotine(pieces, board, opts){
+  const m = margenTablero(board);
+  const kerf = STATE.params.kerf;
+  const EPS = 0.01;
+  const freeRegions = [{x:m, y:m, w:board.ancho-2*m, h:board.largo-2*m}];
+  const placed = [], unplaced = [];
+  const queue = (opts && opts.keepOrder) ? [...pieces] : [...pieces].sort((a,b)=>(b.w*b.h)-(a.w*a.h));
+
+  function mejorEncaje(piece){
+    let best = null;
+    freeRegions.forEach((reg,ri)=>{
+      for(const o of orientaciones(piece)){
+        if(o.w <= reg.w+EPS && o.h <= reg.h+EPS){
+          const sobraW = reg.w-o.w, sobraH = reg.h-o.h;
+          const score = Math.min(sobraW,sobraH)*1e5 + Math.max(sobraW,sobraH);
+          if(!best || score < best.score) best = {ri, o, score};
+        }
+      }
+    });
+    return best;
+  }
+
+  for(const piece of queue){
+    const b = mejorEncaje(piece);
+    if(!b){ unplaced.push(piece); continue; }
+    const reg = freeRegions[b.ri], o = b.o;
+    placed.push({...piece, x:reg.x, y:reg.y, w:o.w, h:o.h, rotated:o.rot, boardId:board.instanceId});
+    const rightW = reg.w - o.w - kerf, bottomH = reg.h - o.h - kerf;
+    // Opción A: derecha a altura completa + abajo solo bajo la pieza
+    const A = [], B = [];
+    if(rightW > EPS) A.push({x:reg.x+o.w+kerf, y:reg.y, w:rightW, h:reg.h});
+    if(bottomH > EPS) A.push({x:reg.x, y:reg.y+o.h+kerf, w:o.w, h:bottomH});
+    // Opción B: abajo a ancho completo + derecha solo junto a la pieza
+    if(bottomH > EPS) B.push({x:reg.x, y:reg.y+o.h+kerf, w:reg.w, h:bottomH});
+    if(rightW > EPS) B.push({x:reg.x+o.w+kerf, y:reg.y, w:rightW, h:o.h});
+    const maxA = A.reduce((s,r)=>Math.max(s,r.w*r.h),0), maxB = B.reduce((s,r)=>Math.max(s,r.w*r.h),0);
+    freeRegions.splice(b.ri, 1, ...(maxA >= maxB ? A : B));
+  }
+  return { placed, unplaced, freeRegions };
+}
+
+/* =========================================================
+   MODO 2: MAXRECTS (NESTING LIBRE)
+   ========================================================= */
+function optimizeMaxRects(pieces, board){
+  const m = STATE.params.margenPer + (board.margen||0) + STATE.params.margenSeg;
+  const kerf = STATE.params.kerf;
+  const availW = board.ancho - 2*m;
+  const availH = board.largo - 2*m;
+
+  let freeRects = [{x:m, y:m, w:availW, h:availH}];
+  const placed = [];
+
+  function intersect(a,b){
+    const x1=Math.max(a.x,b.x), y1=Math.max(a.y,b.y);
+    const x2=Math.min(a.x+a.w,b.x+b.w), y2=Math.min(a.y+a.h,b.y+b.h);
+    if(x2<=x1||y2<=y1) return null;
+    return {x:x1,y:y1,w:x2-x1,h:y2-y1};
+  }
+  function splitFreeRects(used){
+    const newFree = [];
+    for(const fr of freeRects){
+      const inter = intersect(fr, used);
+      if(!inter){ newFree.push(fr); continue; }
+      // 4 posibles sub-rectángulos
+      if(inter.x > fr.x) newFree.push({x:fr.x, y:fr.y, w:inter.x-fr.x, h:fr.h});
+      if(inter.x+inter.w < fr.x+fr.w) newFree.push({x:inter.x+inter.w, y:fr.y, w:fr.x+fr.w-(inter.x+inter.w), h:fr.h});
+      if(inter.y > fr.y) newFree.push({x:fr.x, y:fr.y, w:fr.w, h:inter.y-fr.y});
+      if(inter.y+inter.h < fr.y+fr.h) newFree.push({x:fr.x, y:inter.y+inter.h, w:fr.w, h:fr.y+fr.h-(inter.y+inter.h)});
+    }
+    // Eliminar rectángulos contenidos
+    const pruned = [];
+    for(let i=0;i<newFree.length;i++){
+      let contained = false;
+      for(let j=0;j<newFree.length;j++){
+        if(i===j) continue;
+        const a=newFree[i], b=newFree[j];
+        if(a.x>=b.x && a.y>=b.y && a.x+a.w<=b.x+b.w && a.y+a.h<=b.y+b.h){
+          if(!(a.x===b.x && a.y===b.y && a.w===b.w && a.h===b.h) || j<i){
+            contained = true; break;
+          }
+        }
+      }
+      if(!contained) pruned.push(newFree[i]);
+    }
+    freeRects = pruned;
+  }
+
+  function findBestPosition(piece){
+    let best = null;
+    for(const fr of freeRects){
+      for(const o of orientaciones(piece)){
+        if(o.w <= fr.w + 1e-9 && o.h <= fr.h + 1e-9){
+          // Heurística: mejor ajuste (menor área sobrante)
+          const leftover = (fr.w*fr.h) - (o.w*o.h);
+          // Bonus por tocar bordes (borde inferior-izquierdo)
+          const touchX = (fr.x === m) ? 1 : 0;
+          const touchY = (fr.y === m) ? 1 : 0;
+          const score = leftover - (touchX+touchY)*50;
+          if(!best || score < best.score){
+            best = { x:fr.x, y:fr.y, w:o.w, h:o.h, rot:o.rot, score };
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  const sorted = [...pieces].sort((a,b)=>(b.w*b.h)-(a.w*a.h));
+  const unplaced = [];
+  for(const piece of sorted){
+    const pos = findBestPosition(piece);
+    if(!pos){ unplaced.push(piece); continue; }
+    // Colocar con kerf incluido en el rect ocupado
+    const occupied = { x:pos.x, y:pos.y, w:pos.w+kerf, h:pos.h+kerf };
+    // Pero la pieza real es sin kerf en la posición
+    placed.push({
+      ...piece, x:pos.x, y:pos.y, w:pos.w, h:pos.h, rotated:pos.rot,
+      boardId: board.instanceId
+    });
+    splitFreeRects(occupied);
+  }
+  return { placed, unplaced, freeRegions: freeRects };
+}
+
+/* =========================================================
+   MODO 3: MIXTO / INTELIGENTE
+   ========================================================= */
+/**
+ * El modo mixto ejecuta variantes del guillotine (ordenamientos distintos)
+ * y del MaxRects, comparando resultados. Escoge el que deje menos tableros
+ * y menos desperdicio, con un desempate por número de cortes estimados.
+ */
+function optimizeMixed(pieces, board){
+  const orden = {
+    'Guillotine-área':   [...pieces].sort((a,b)=>(b.w*b.h)-(a.w*a.h)),
+    'Guillotine-largo':  [...pieces].sort((a,b)=>Math.max(b.w,b.h)-Math.max(a.w,a.h) || (b.w*b.h)-(a.w*a.h)),
+    'Guillotine-ancho':  [...pieces].sort((a,b)=>Math.min(b.w,b.h)-Math.min(a.w,a.h) || (b.w*b.h)-(a.w*a.h))
+  };
+  const variants = Object.entries(orden).map(([name,list])=>({name, result: optimizeGuillotine(list, board, {keepOrder:true})}));
+  variants.push({ name:'MaxRects', result: optimizeMaxRects(pieces, board) });
+
+  // Mejor variante = más área de pieza colocada en este tablero
+  let best = variants[0];
+  for(const v of variants){
+    if(usedArea(v.result.placed) > usedArea(best.result.placed) + 1e-6) best = v;
+  }
+  return { ...best.result, variantName: best.name, allVariants: variants.map(v=>({
+    name:v.name, placed:v.result.placed.length, unplaced:v.result.unplaced.length
+  }))};
+}
+
+function usedArea(placed){ return placed.reduce((s,p)=>s+p.w*p.h, 0); }
+
+/* =========================================================
+   OPTIMIZACIÓN GLOBAL
+   ========================================================= */
+
+/**
+ * Ejecuta un modo sobre todas las piezas y tableros disponibles.
+ * Devuelve un resultado consolidado con boards (cada uno con placed).
+ */
+function runMode(modeName){
+  const grouped = expandPieces();
+  const boardsUsed = [];
+  let totalCuts = 0;
+  const unplacedAll = [];
+  const freeLeftovers = [];
+
+  // Modos disponibles
+  const modeFns = {
+    'guillotine': optimizeGuillotine,
+    'maxrects': optimizeMaxRects,
+    'mixto': optimizeMixed
+  };
+  const fn = modeFns[modeName];
+
+  Object.entries(grouped).forEach(([key, group])=>{
+    let remaining = [...group.pieces];
+    const available = getTablerosFor(group.material, group.espesor);
+    let boardIdx = 0;
+
+    // Validación: pieza más grande que el tablero
+    const validTab = available[0];
+    if(!validTab){
+      unplacedAll.push(...remaining.map(p=>({...p, reason:'Sin tablero del material/espesor'})));
+      return;
+    }
+
+    // Filtrar piezas que no caben
+    remaining = remaining.filter(p=>{
+      if(!available.some(b=>pieceFitsInBoard(p, b))){
+        unplacedAll.push({...p, reason:'Pieza más grande que el tablero'});
+        return false;
+      }
+      return true;
+    });
+
+    while(remaining.length > 0 && boardIdx < available.length){
+      const board = available[boardIdx];
+      board.instanceId = `${key}_B${boardIdx}`;
+      const res = fn(remaining, board);
+      if(res.placed.length === 0){
+        boardIdx++;
+        continue;
+      }
+      boardsUsed.push({
+        id: board.instanceId,
+        board,
+        placed: res.placed,
+        freeRegions: res.freeRegions || [],
+        mode: modeName,
+        variantName: res.variantName || null
+      });
+      remaining = res.unplaced;
+      boardIdx++;
+      totalCuts += estimateCuts(res.placed, modeName);
+    }
+    if(remaining.length > 0){
+      unplacedAll.push(...remaining.map(p=>({...p, reason:'Sin tableros suficientes'})));
+    }
+  });
+
+  const totalEsperado = Object.values(grouped).reduce((n,g)=>n+g.pieces.length,0);
+  const out = { mode: modeName, boards: boardsUsed, unplaced: unplacedAll, totalCuts };
+  out.validation = validarResultado(out, totalEsperado);
+  return out;
+}
+
+/**
+ * Verifica un resultado: piezas dentro del tablero (con márgenes), separación de sierra
+ * entre piezas y que colocadas + no colocadas = piezas esperadas. Devuelve lista de errores.
+ */
+function validarResultado(result, totalEsperado){
+  const errs = [], kerf = STATE.params.kerf, EPS = 0.01;
+  result.boards.forEach(b=>{
+    const m = margenTablero(b.board);
+    b.placed.forEach((p,i)=>{
+      if(p.x < m-EPS || p.y < m-EPS || p.x+p.w > b.board.ancho-m+EPS || p.y+p.h > b.board.largo-m+EPS)
+        errs.push(`${b.id}: "${p.name}" excede el tablero`);
+      for(let j=i+1;j<b.placed.length;j++){
+        const q = b.placed[j];
+        const sepX = Math.max(q.x-(p.x+p.w), p.x-(q.x+q.w));
+        const sepY = Math.max(q.y-(p.y+p.h), p.y-(q.y+q.h));
+        if(Math.max(sepX,sepY) < kerf-EPS) errs.push(`${b.id}: "${p.name}" y "${q.name}" sin separación de corte`);
+      }
+    });
+  });
+  const colocadas = result.boards.reduce((n,b)=>n+b.placed.length,0);
+  if(totalEsperado!==undefined && colocadas + result.unplaced.length !== totalEsperado)
+    errs.push(`Cantidad inconsistente: ${colocadas} colocadas + ${result.unplaced.length} sin colocar ≠ ${totalEsperado}`);
+  return errs;
+}
+
+function estimateCuts(placed, mode){
+  if(placed.length === 0) return 0;
+  if(mode === 'maxrects'){
+    return placed.length * 4; // Estimación: 4 cortes por pieza (libre)
+  }
+  // Guillotine: número de subdivisiones ~ piezas + regiones
+  return placed.length + 1;
+}
+
+/**
+ * Calcula métricas de un resultado.
+ */
+function computeMetrics(result){
+  const placed = result.boards.flatMap(b=>b.placed);
+  const areaPiezas = placed.reduce((s,p)=>s + (p.w*p.h), 0);
+  const areaTableros = result.boards.reduce((s,b)=>s + (b.board.ancho * b.board.largo), 0);
+  const desperdicio = Math.max(0, areaTableros - areaPiezas);
+  const aprovechamiento = areaTableros > 0 ? (areaPiezas/areaTableros)*100 : 0;
+  const costo = result.boards.reduce((s,b)=>s + (b.board.precio||0), 0);
+  const costoDesperdicio = areaTableros > 0 ? costo * (desperdicio/areaTableros) : 0;
+  const sobrantesReutilizables = result.boards.reduce((s,b)=>s + countReusable(b), 0);
+  return {
+    tableros: result.boards.length,
+    piezasColocadas: placed.length,
+    piezasTotal: placed.length + result.unplaced.length,
+    areaPiezas, areaTableros, desperdicio, aprovechamiento,
+    costo, costoDesperdicio, cortes: result.totalCuts,
+    sobrantes: sobrantesReutilizables,
+    unplaced: result.unplaced.length
+  };
+}
+
+function countReusable(board){
+  // Región libre con ambos lados >= 200mm se considera reutilizable
+  return board.freeRegions.filter(r=>r.w>=200 && r.h>=200).length;
+}
+// <<ALGO-END
+/* =========================================================
+   BOTÓN PRINCIPAL: CALCULAR
+   ========================================================= */
+$('btnOptimize').onclick = ()=>{
+  if(STATE.tableros.length === 0){ toast('Registra al menos un tablero','error'); return; }
+  if(STATE.piezas.length === 0){ toast('Registra al menos una pieza','error'); return; }
+
+  const bar = $('optProgress');
+  bar.style.display='block';
+  bar.firstElementChild.style.width='10%';
+
+  setTimeout(()=>{
+    bar.firstElementChild.style.width='30%';
+    const rG = runMode('guillotine');
+    bar.firstElementChild.style.width='55%';
+    const rM = runMode('maxrects');
+    bar.firstElementChild.style.width='80%';
+    const rX = runMode('mixto');
+    bar.firstElementChild.style.width='100%';
+
+    const results = [
+      { name:'Guillotine', result:rG, metrics: computeMetrics(rG), status:'Solución heurística' },
+      { name:'MaxRects', result:rM, metrics: computeMetrics(rM), status:'Solución heurística' },
+      { name:'Mixto', result:rX, metrics: computeMetrics(rX), status: rX.unplaced.length===0 ? 'Mejor evaluada (no demostrada óptima)' : 'Solución heurística' }
+    ];
+
+    const fallas = [rG,rM,rX].flatMap(r=>r.validation||[]);
+    if(fallas.length){ console.error('Validación de optimización:', fallas); toast('⚠️ La validación detectó '+fallas.length+' problema(s); revisa la consola','error'); }
+    STATE.lastResult = results;
+    renderComparison(results);
+    renderPlanoSelector(results);
+    renderSavings(results);
+    $('savingsCard').style.display='block';
+    setTimeout(()=>bar.style.display='none', 500);
+    toast('Optimización completada','success');
+  }, 60);
+};
+
+function pickBest(results){
+  const crit = STATE.params.criterio;
+  const score = (m)=>{
+    if(crit==='tableros') return m.tableros + (m.unplaced>0?1000:0);
+    if(crit==='desperdicio') return m.desperdicio + (m.unplaced>0?1e7:0);
+    if(crit==='costo') return m.costo + (m.unplaced>0?1e7:0);
+    if(crit==='cortes') return m.cortes + (m.unplaced>0?10000:0);
+    return 0;
+  };
+  return results.reduce((a,b)=> score(a.metrics) <= score(b.metrics) ? a : b);
+}
+
+function renderComparison(results){
+  const tbody = $('tablaComparacion').querySelector('tbody');
+  tbody.innerHTML='';
+  const best = pickBest(results);
+  results.forEach(r=>{
+    const m = r.metrics;
+    const tr = document.createElement('tr');
+    if(r===best) tr.classList.add('best-row');
+    tr.innerHTML = `
+      <td><b>${r.name}</b></td>
+      <td>${m.tableros}</td>
+      <td>${fmt(m.areaPiezas)} mm²</td>
+      <td>${fmt(m.areaTableros)} mm²</td>
+      <td>${fmt(m.desperdicio)} mm²</td>
+      <td>${m.aprovechamiento.toFixed(2)}%</td>
+      <td>${m.cortes}</td>
+      <td>$${fmt(m.costo,2)}</td>
+      <td>${r.status}${m.unplaced>0?' · '+m.unplaced+' sin colocar':''}</td>`;
+    tbody.appendChild(tr);
+  });
+  $('comparisonCard').style.display='block';
+  $('bestModeBox').innerHTML = `✅ Mejor resultado según criterio <b>"${STATE.params.criterio}"</b>: <b>${best.name}</b> — ${best.metrics.tableros} tableros, ${best.metrics.aprovechamiento.toFixed(2)}% aprovechamiento.`;
+  $('statModo').textContent = best.name;
+  $('statAprov').textContent = best.metrics.aprovechamiento.toFixed(1)+'%';
+}
+
+function renderSavings(results){
+  // Referencia = Guillotine básico (nuestro método menos optimizado entre los 3)
+  const ref = results.find(r=>r.name==='Guillotine');
+  const best = pickBest(results);
+  if(!ref || !best) return;
+  const tabAhorrados = ref.metrics.tableros - best.metrics.tableros;
+  const areaAhorrada = (ref.metrics.areaTableros - best.metrics.areaTableros)/1e6; // m²
+  const ahorroMoney = ref.metrics.costo - best.metrics.costo;
+  $('saveTab').textContent = tabAhorrados;
+  $('saveM2').textContent = areaAhorrada.toFixed(3)+' m²';
+  $('saveMoney').textContent = '$'+fmt(ahorroMoney,2);
+  $('saveWaste').textContent = best.metrics.desperdicio>0 ? fmt(best.metrics.desperdicio/1e6,3)+' m²' : '0';
+  $('savingsNote').innerHTML = `Método de referencia: <b>Guillotine básico</b> (el más simple de los tres). ` +
+    `El ahorro mostrado es la diferencia entre ese método y el mejor según el criterio <b>"${STATE.params.criterio}"</b>. ` +
+    `No se trata de un óptimo matemático demostrado, sino del mejor resultado encontrado por nuestras heurísticas.`;
+}
+
+/* =========================================================
+   PLANOS (SVG)
+   ========================================================= */
+let currentPlanData = null;
+
+function renderPlanoSelector(results){
+  const best = pickBest(results);
+  STATE.bestResult = best.result;
+  const boards = best.result.boards;
+  const sel = $('selTableroPlano');
+  sel.innerHTML='';
+  boards.forEach((b,i)=>{
+    const o = document.createElement('option');
+    o.value = i;
+    o.textContent = `Tablero ${i+1} — ${b.board.material} ${nf(b.board.espesor)} mm (${b.board.ancho}×${b.board.largo})`;
+    sel.appendChild(o);
+  });
+  $('planosControls').style.display = boards.length?'block':'none';
+  renderResumen(best.result);
+  sel.onchange = ()=> drawPlano(+sel.value);
+  ['chkShowDims','chkShowCuts','chkShowVeta','chkShowLabels'].forEach(id=>{
+    $(id).onchange = ()=> drawPlano(+$('selTableroPlano').value);
+  });
+  $('btnZoomIn').onclick = ()=>{ STATE.zoom=Math.min(3,STATE.zoom+0.2); applyZoom(); };
+  $('btnZoomOut').onclick = ()=>{ STATE.zoom=Math.max(0.3,STATE.zoom-0.2); applyZoom(); };
+  $('btnZoomReset').onclick = ()=>{ STATE.zoom=1; applyZoom(); };
+  if(boards.length) drawPlano(0);
+  else $('planoContainer').innerHTML = '<p class="empty-msg">No hay tableros utilizados.</p>';
+}
+
+function applyZoom(){
+  const svg = $('planoContainer').querySelector('svg');
+  if(svg) svg.style.transform = `scale(${STATE.zoom})`;
+}
+
+// <<PLANO-START (sin DOM; se prueba por separado)
+const nf = n => Number.isInteger(+n) ? fmt(n,0) : fmt(n,1);
+const escSvg = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const truncTxt = (s,n)=> s.length>n ? s.slice(0,Math.max(1,n-1))+'…' : s;
+
+/** "3, 4, 5, 9" -> "3–5, 9" */
+function compactarNumeros(nums){
+  const out=[]; let i=0;
+  while(i<nums.length){
+    let j=i; while(j+1<nums.length && nums[j+1]===nums[j]+1) j++;
+    out.push(j>i+1 ? `${nums[i]}–${nums[j]}` : nums.slice(i,j+1).join(', '));
+    i=j+1;
+  }
+  return out.join(', ');
+}
+
+/** Numeración del tablero: global y dentro de su material/espesor. */
+function infoTablero(boards, idx){
+  const b = boards[idx];
+  const mismos = boards.filter(x=>x.board.material===b.board.material && +x.board.espesor===+b.board.espesor);
+  return { numero: idx+1, total: boards.length, secMat: mismos.indexOf(b)+1, totMat: mismos.length };
+}
+
+/** Elige tamaño de letra y texto que quepan DENTRO de la pieza; si no caben, devuelve null. */
+function layoutTextoPieza(lineas, pw, ph){
+  const C = 0.6; // ancho medio de un carácter ≈ 0.6 × tamaño
+  let fs = Math.min(12, ph/(lineas.length*1.3+0.3));
+  if(fs < 7) return null;
+  const out = [];
+  for(let i=0;i<lineas.length;i++){
+    const l = lineas[i];
+    const maxChars = Math.floor((pw-6)/(fs*C));
+    if(l.fijo){ if(l.t.length>maxChars) return null; out.push(l.t); }
+    else { if(maxChars < l.min) return null; out.push(truncTxt(l.t, maxChars)); }
+  }
+  return { fs, lineas: out };
+}
+
+/**
+ * Construye el SVG de un tablero (a escala real, sin deformar).
+ * b: {board, placed}; info: infoTablero(); opts: {showCuts, showDims, showVeta, showLabels}
+ * Devuelve {svg, width, height}.
+ */
+function construirPlanoSVG(b, info, opts){
+  const P = STATE.params, board = b.board, placed = b.placed;
+  const W = board.ancho, H = board.largo, kerf = P.kerf, m = margenTablero(board);
+  const scale = Math.min(860/W, 760/H, 1.2);
+  const bw = W*scale, bh = H*scale;
+  const top = 122, left = 70, right = 30;
+  const svgW = Math.max(left+bw+right, 600);
+  const x0 = left + (svgW-left-right-bw)/2, y0 = top;
+  const uid2 = 'p'+info.numero;
+
+  // Piezas numeradas en el orden de colocación
+  const piezas = placed.map((p,i)=>({...p, n:i+1}));
+  const areaPiezas = piezas.reduce((s,p)=>s+p.w*p.h,0);
+  const areaTab = W*H;
+  const aprov = areaTab? areaPiezas/areaTab*100 : 0;
+
+  // Leyenda agrupada (pieza + medida final + original)
+  const grupos = {};
+  piezas.forEach(p=>{
+    const fw = p.rotated? p.h : p.w, fh = p.rotated? p.w : p.h;
+    const k = p.name+'|'+fw+'|'+fh+'|'+(p.rotated?1:0);
+    (grupos[k] = grupos[k] || {name:p.name, fw, fh, ow:p.ow, oh:p.oh, rot:p.rotated, nums:[]}).nums.push(p.n);
+  });
+  const leyenda = Object.values(grupos).map(g=>{
+    const orig = (g.ow!==undefined && (Math.abs(g.ow-g.fw)>0.01 || Math.abs(g.oh-g.fh)>0.01)) ? ` (orig. ${nf(g.ow)}×${nf(g.oh)})` : '';
+    return `#${compactarNumeros(g.nums)} · ${g.nums.length}× ${truncTxt(g.name,28)} · ${nf(g.fw)}×${nf(g.fh)} mm${g.rot?' ↻':''}${orig}`;
+  });
+  const legY = y0 + bh + 40, lh = 15;
+  const svgH = legY + 22 + leyenda.length*lh + 50;
+
+  let s = '';
+  s += `<svg xmlns="http://www.w3.org/2000/svg" class="plano-svg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" font-family="Segoe UI, Arial, sans-serif">`;
+  s += `<defs><pattern id="hatch${uid2}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="#cbd5e1" stroke-width="1"/></pattern>`+
+       `<marker id="arr${uid2}" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto"><polygon points="0,0 6,3 0,6" fill="#7c2d12"/></marker></defs>`;
+  s += `<rect width="${svgW}" height="${svgH}" fill="#fff"/>`;
+
+  // Encabezado
+  s += `<text x="${left-30}" y="24" font-size="17" font-weight="700" fill="#0f172a">Tablero ${info.numero} de ${info.total} — ${escSvg(board.material)} · espesor ${nf(board.espesor)} mm</text>`;
+  s += `<text x="${left-30}" y="44" font-size="12.5" fill="#334155">Tablero ${info.secMat} de ${info.totMat} de este material · Medidas: ${fmt(W)} × ${fmt(H)} mm (ancho × largo)</text>`;
+  s += `<text x="${left-30}" y="62" font-size="12.5" fill="#334155">Corte de sierra (kerf): ${kerf} mm · Margen perimetral: ${nf(m)} mm</text>`;
+  s += `<text x="${left-30}" y="80" font-size="12.5" font-weight="600" fill="#166534">${piezas.length} piezas · Aprovechamiento ${aprov.toFixed(1)}% · Sobrante ${(100-aprov).toFixed(1)}% (${fmt((areaTab-areaPiezas)/1e6,2)} m²)</text>`;
+
+  // Cotas del tablero
+  const ty = y0-16;
+  s += `<g stroke="#334155" stroke-width="1" fill="none"><line x1="${x0}" y1="${ty}" x2="${x0+bw}" y2="${ty}"/><line x1="${x0}" y1="${ty-4}" x2="${x0}" y2="${ty+4}"/><line x1="${x0+bw}" y1="${ty-4}" x2="${x0+bw}" y2="${ty+4}"/>`+
+       `<line x1="${x0-16}" y1="${y0}" x2="${x0-16}" y2="${y0+bh}"/><line x1="${x0-20}" y1="${y0}" x2="${x0-12}" y2="${y0}"/><line x1="${x0-20}" y1="${y0+bh}" x2="${x0-12}" y2="${y0+bh}"/></g>`;
+  s += `<text x="${x0+bw/2}" y="${ty-5}" text-anchor="middle" font-size="12" font-weight="600" fill="#0f172a">${fmt(W)} mm</text>`;
+  s += `<text transform="translate(${x0-22} ${y0+bh/2}) rotate(-90)" text-anchor="middle" font-size="12" font-weight="600" fill="#0f172a">${fmt(H)} mm</text>`;
+
+  // Tablero: fondo, sobrante rayado y margen
+  s += `<rect x="${x0}" y="${y0}" width="${bw}" height="${bh}" fill="#f8fafc" stroke="#334155" stroke-width="2"/>`;
+  s += `<rect x="${x0}" y="${y0}" width="${bw}" height="${bh}" fill="url(#hatch${uid2})"/>`;
+  s += `<rect x="${x0+m*scale}" y="${y0+m*scale}" width="${(W-2*m)*scale}" height="${(H-2*m)*scale}" fill="none" stroke="#94a3b8" stroke-dasharray="4 3"/>`;
+
+  // Bandas de kerf (debajo de las piezas)
+  if(opts.showCuts){
+    const kb = Math.max(kerf*scale, 1.5);
+    piezas.forEach(p=>{
+      const x = x0+p.x*scale, y = y0+p.y*scale, w = p.w*scale, h = p.h*scale;
+      s += `<rect x="${x+w}" y="${y}" width="${kb}" height="${h+kb}" fill="#ef4444" fill-opacity="0.6"/>`;
+      s += `<rect x="${x}" y="${y+h}" width="${w+kb}" height="${kb}" fill="#ef4444" fill-opacity="0.6"/>`;
+    });
+  }
+
+  // Piezas
+  piezas.forEach(p=>{
+    const x = x0+p.x*scale, y = y0+p.y*scale, w = p.w*scale, h = p.h*scale;
+    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${hslColorFromString(p.material+p.name)}" fill-opacity="0.85" stroke="#0f172a" stroke-width="1"/>`;
+    // Veta (flecha en el borde, para no chocar con el texto)
+    if(opts.showVeta && p.veta!=='ninguna' && w>26 && h>26){
+      const vertical = (p.veta==='largo') !== !!p.rotated;
+      s += vertical
+        ? `<line x1="${x+7}" y1="${y+h*0.2}" x2="${x+7}" y2="${y+h*0.8}" stroke="#7c2d12" stroke-width="1.4" marker-end="url(#arr${uid2})"/>`
+        : `<line x1="${x+w*0.2}" y1="${y+h-7}" x2="${x+w*0.8}" y2="${y+h-7}" stroke="#7c2d12" stroke-width="1.4" marker-end="url(#arr${uid2})"/>`;
+    }
+    // Texto: solo si cabe dentro de la pieza (el resto queda en la leyenda)
+    const dims = `${nf(p.w)}×${nf(p.h)}`;
+    const cands = [];
+    if(opts.showLabels && opts.showDims) cands.push([{t:`#${p.n} ${p.name}`,min:6},{t:dims,fijo:true}]);
+    if(opts.showDims) cands.push([{t:`#${p.n}`,fijo:true},{t:dims,fijo:true}]);
+    if(opts.showLabels) cands.push([{t:`#${p.n} ${p.name}`,min:6}]);
+    cands.push([{t:`#${p.n}`,fijo:true}]);
+    let lay = null;
+    for(const c of cands){ lay = layoutTextoPieza(c, w, h); if(lay) break; }
+    if(lay){
+      const lhh = lay.fs*1.3, cx = x+w/2, cy = y+h/2 - (lay.lineas.length-1)*lhh/2;
+      lay.lineas.forEach((t,i)=>{
+        s += `<text x="${cx}" y="${cy+i*lhh}" text-anchor="middle" dominant-baseline="middle" font-size="${lay.fs.toFixed(1)}" font-weight="${i===0?700:500}" fill="#0f172a">${escSvg(t)}</text>`;
+      });
+    }
+  });
+
+  // Leyenda
+  s += `<text x="${left-30}" y="${legY}" font-size="13" font-weight="700" fill="#0f172a">Piezas de este tablero (medida: ancho × largo, ↻ = girada)</text>`;
+  leyenda.forEach((t,i)=>{ s += `<text x="${left-30}" y="${legY+20+i*lh}" font-size="12" fill="#1e293b">${escSvg(t)}</text>`; });
+
+  // Esquema ampliado del kerf
+  const ky = legY + 24 + leyenda.length*lh + 6;
+  s += `<rect x="${left-30}" y="${ky-9}" width="28" height="12" fill="#cbd5e1" stroke="#0f172a"/><rect x="${left-2}" y="${ky-9}" width="6" height="12" fill="#ef4444" fill-opacity="0.6"/><rect x="${left+4}" y="${ky-9}" width="28" height="12" fill="#cbd5e1" stroke="#0f172a"/>`;
+  s += `<text x="${left+42}" y="${ky}" font-size="11.5" fill="#334155">Separación de sierra entre piezas: ${kerf} mm (esquema ampliado). Zona rayada = sobrante.</text>`;
+  s += `</svg>`;
+  return { svg: s, width: svgW, height: svgH };
+}
+
+/** Resumen por material + espesor del resultado de una optimización. */
+function resumenPorMaterial(result){
+  const g = {};
+  const get = (mat, esp)=> g[mat+'|'+(+esp)] = g[mat+'|'+(+esp)] || {material:mat, espesor:+esp, medidas:new Set(), tableros:0, colocadas:0, sinColocar:0, areaPiezas:0, areaTableros:0};
+  result.boards.forEach(b=>{
+    const o = get(b.board.material, b.board.espesor);
+    o.medidas.add(`${fmt(b.board.ancho)}×${fmt(b.board.largo)}`);
+    o.tableros++; o.colocadas += b.placed.length;
+    o.areaPiezas += b.placed.reduce((s,p)=>s+p.w*p.h,0);
+    o.areaTableros += b.board.ancho*b.board.largo;
+  });
+  result.unplaced.forEach(p=>{ get(p.material, p.espesor).sinColocar++; });
+  return Object.values(g).map(o=>({
+    ...o, medidas: o.medidas.size ? [...o.medidas].join(' · ') : '—',
+    requeridas: o.colocadas + o.sinColocar,
+    aprov: o.areaTableros ? o.areaPiezas/o.areaTableros*100 : 0,
+    desperdicioMm2: o.areaTableros - o.areaPiezas,
+    desperdicioPct: o.areaTableros ? (o.areaTableros-o.areaPiezas)/o.areaTableros*100 : 0
+  })).sort((a,b)=> a.material.localeCompare(b.material) || a.espesor-b.espesor);
+}
+
+function drawPlano(idx){
+  const boards = STATE.bestResult?.boards || [];
+  const b = boards[idx]; if(!b) return;
+  const out = construirPlanoSVG(b, infoTablero(boards, idx), {
+    showCuts: $('chkShowCuts').checked, showDims: $('chkShowDims').checked,
+    showVeta: $('chkShowVeta').checked, showLabels: $('chkShowLabels').checked
+  });
+  const container = $('planoContainer');
+  container.innerHTML = out.svg;
+  container.querySelector('svg').style.transform = `scale(${STATE.zoom})`;
+  currentPlanData = { board:b.board, placed:b.placed, svgW:out.width, svgH:out.height };
+}
+
+/** Pinta el resumen general por material y espesor debajo de los planos. */
+function renderResumen(result){
+  const rows = resumenPorMaterial(result);
+  const kerf = STATE.params.kerf;
+  const th = $('resumenMateriales').querySelector('thead');
+  const tb = $('resumenMateriales').querySelector('tbody');
+  th.innerHTML = '<tr><th>Material</th><th>Espesor (mm)</th><th>Tablero (ancho×largo mm)</th><th>Piezas requeridas</th><th>Colocadas</th><th>Tableros usados</th><th>Kerf (mm)</th><th>Aprovechamiento</th><th>Desperdicio estimado</th></tr>';
+  tb.innerHTML = '';
+  let t = {req:0,col:0,tab:0,ap:0,at:0};
+  rows.forEach(r=>{
+    t.req+=r.requeridas; t.col+=r.colocadas; t.tab+=r.tableros; t.ap+=r.areaPiezas; t.at+=r.areaTableros;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${escapeHtml(r.material)}</td><td>${nf(r.espesor)}</td><td>${r.medidas}</td><td>${r.requeridas}</td>`+
+      `<td>${r.colocadas}${r.sinColocar?` <span style="color:#dc2626">(${r.sinColocar} sin colocar)</span>`:''}</td><td>${r.tableros}</td><td>${kerf}</td>`+
+      `<td>${r.aprov.toFixed(1)}%</td><td>${fmt(r.desperdicioMm2/1e6,2)} m² (${r.desperdicioPct.toFixed(1)}%)</td>`;
+    tb.appendChild(tr);
+  });
+  const tr = document.createElement('tr');
+  tr.style.fontWeight = '700';
+  tr.innerHTML = `<td colspan="3">TOTAL</td><td>${t.req}</td><td>${t.col}</td><td>${t.tab}</td><td>${kerf}</td>`+
+    `<td>${t.at?(t.ap/t.at*100).toFixed(1):'0.0'}%</td><td>${fmt((t.at-t.ap)/1e6,2)} m² (${t.at?((t.at-t.ap)/t.at*100).toFixed(1):'0.0'}%)</td>`;
+  tb.appendChild(tr);
+  $('resumenCard').style.display = rows.length ? 'block' : 'none';
+}
+
+function hslColorFromString(str){
+  let hash = 0;
+  for(let i=0;i<str.length;i++) hash = str.charCodeAt(i) + ((hash<<5)-hash);
+  const h = Math.abs(hash) % 360;
+  return `hsl(${h}, 55%, 72%)`;
+}
+// <<PLANO-END
+
+// <<PDF-START (sin DOM; se prueba por separado)
+function hslAArreglo(str){
+  const m = String(str).match(/hsl\(([\d.]+),\s*([\d.]+)%,\s*([\d.]+)%\)/);
+  if(!m) return [220,220,220];
+  const h=+m[1]/360, s=+m[2]/100, l=+m[3]/100;
+  const q = l<0.5 ? l*(1+s) : l+s-l*s, p = 2*l-q;
+  const f = t=>{ t=(t+1)%1; return t<1/6? p+(q-p)*6*t : t<1/2? q : t<2/3? p+(q-p)*(2/3-t)*6 : p; };
+  return [f(h+1/3),f(h),f(h-1/3)].map(v=>Math.round(v*255));
+}
+
+/** Agrupa las piezas de un tablero para la leyenda (misma pieza y medida = una fila). */
+function agruparLeyenda(placed){
+  const g = {};
+  placed.forEach((p,i)=>{
+    const n = i+1, fw = p.rotated? p.h : p.w, fh = p.rotated? p.w : p.h;
+    const k = p.name+'|'+fw+'|'+fh;
+    (g[k] = g[k] || {name:p.name, fw, fh, ow:p.ow, oh:p.oh, rot:!!p.rotated, nums:[]}).nums.push(n);
+  });
+  return Object.values(g).map(o=>({
+    nums: compactarNumeros(o.nums), name:o.name, cant:o.nums.length,
+    med: `${nf(o.fw)} x ${nf(o.fh)}`,
+    orig: (o.ow!==undefined && (Math.abs(o.ow-o.fw)>0.01 || Math.abs(o.oh-o.fh)>0.01)) ? `${nf(o.ow)} x ${nf(o.oh)}` : '-',
+    girada: o.rot ? 'Sí' : ''
+  }));
+}
+
+/** Elige tamaño de letra (pt) y texto que quepan dentro de una pieza dibujada en mm. */
+function textoPiezaPdf(doc, cands, pw, ph){
+  for(const c of cands){
+    for(let fs=8; fs>=4.5; fs-=0.5){
+      doc.setFontSize(fs);
+      const lh = fs*0.3528*1.25;
+      if(c.length*lh > ph-1) continue;
+      const lines = []; let ok = true;
+      for(const l of c){
+        let t = l.t; const maxW = pw-3;
+        if(doc.getTextWidth(t) > maxW){
+          if(l.fijo){ ok=false; break; }
+          while(t.length>5 && doc.getTextWidth(t+'...') > maxW) t = t.slice(0,-1);
+          if(doc.getTextWidth(t+'...') > maxW || t.length<=5){ ok=false; break; }
+          t += '...';
+        }
+        lines.push(t);
+      }
+      if(ok) return {fs, lines, lh};
+    }
+  }
+  return null;
+}
+
+/**
+ * Construye el PDF general de optimización en `doc` (jsPDF con autoTable).
+ * result: resultado de optimización; ctx: {fecha, proyecto, modo}
+ */
+function construirPdfOptimizacion(doc, result, ctx){
+  const P = STATE.params, kerf = P.kerf;
+  const resumen = resumenPorMaterial(result);
+  const boards = result.boards;
+  const totTab = boards.length;
+  const totReq = resumen.reduce((n,r)=>n+r.requeridas,0);
+  const totCol = resumen.reduce((n,r)=>n+r.colocadas,0);
+  const aP = resumen.reduce((n,r)=>n+r.areaPiezas,0), aT = resumen.reduce((n,r)=>n+r.areaTableros,0);
+
+  // ---------- Página 1: resumen general ----------
+  doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(15,23,42);
+  doc.text('OPTIMIZACIÓN DE CORTE DE TABLEROS', 12, 16);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(51,65,85);
+  doc.text(`Fecha de generación: ${ctx.fecha}`, 12, 23);
+  doc.text(`Proyecto: ${ctx.proyecto}`, 12, 28);
+  doc.text(`Corte de sierra (kerf): ${kerf} mm   |   Margen perimetral: ${nf(P.margenPer + P.margenSeg)} mm   |   Método: ${ctx.modo}`, 12, 33);
+  doc.text(`Piezas: ${totCol} de ${totReq} colocadas   |   Tableros necesarios: ${totTab}   |   Aprovechamiento global: ${aT? (aP/aT*100).toFixed(1):'0.0'}%`, 12, 38);
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(15,23,42);
+  doc.text('Resumen de materiales y cantidades', 12, 47);
+  const body = resumen.map(r=>[r.material, nf(r.espesor), r.medidas.replace(/,/g,''), r.requeridas, r.colocadas+(r.sinColocar?` (${r.sinColocar} sin colocar)`:''), r.tableros, kerf, r.aprov.toFixed(1)+'%', `${(r.desperdicioMm2/1e6).toFixed(2)} m2 (${r.desperdicioPct.toFixed(1)}%)`]);
+  body.push(['TOTAL','','',totReq,totCol,totTab,kerf,(aT?(aP/aT*100).toFixed(1):'0.0')+'%',`${((aT-aP)/1e6).toFixed(2)} m2 (${aT?((aT-aP)/aT*100).toFixed(1):'0.0'}%)`]);
+  doc.autoTable({
+    startY: 50, margin:{left:12,right:12}, theme:'grid',
+    head:[['Material','Espesor (mm)','Tablero (mm)','Piezas req.','Colocadas','Tableros','Kerf (mm)','Aprovech.','Desperdicio']],
+    body, styles:{fontSize:8, cellPadding:1.6}, headStyles:{fillColor:[15,23,42]},
+    didParseCell: d=>{ if(d.section==='body' && d.row.index===body.length-1){ d.cell.styles.fontStyle='bold'; d.cell.styles.fillColor=[226,232,240]; } }
+  });
+
+  let y = doc.lastAutoTable.finalY + 10;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  doc.text('Cantidad total de tableros necesarios por material', 12, y);
+  doc.autoTable({
+    startY: y+3, margin:{left:12,right:12}, theme:'striped',
+    head:[['Material','Espesor (mm)','Medida del tablero (mm)','Tableros necesarios']],
+    body: resumen.map(r=>[r.material, nf(r.espesor), r.medidas.replace(/,/g,''), r.tableros]).concat([['TOTAL','','',totTab]]),
+    styles:{fontSize:9, cellPadding:1.8}, headStyles:{fillColor:[37,99,235]},
+    didParseCell: d=>{ if(d.section==='body' && d.row.index===resumen.length){ d.cell.styles.fontStyle='bold'; } }
+  });
+  if(result.unplaced.length){
+    y = doc.lastAutoTable.finalY + 8;
+    doc.setFontSize(10); doc.setTextColor(220,38,38);
+    doc.text(`ATENCIÓN: ${result.unplaced.length} pieza(s) no se pudieron colocar`, 12, y);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+    const lst = result.unplaced.slice(0,12).map(p=>`- ${p.name} (${nf(p.w)} x ${nf(p.h)} mm, ${p.material}): ${p.reason||'sin tablero disponible'}`);
+    doc.text(lst, 12, y+5);
+    doc.setTextColor(15,23,42);
+  }
+
+  // ---------- Una página por tablero ----------
+  boards.forEach((b,idx)=>{
+    const board = b.board, info = infoTablero(boards, idx);
+    const orient = board.ancho > board.largo ? 'landscape' : 'portrait';
+    doc.addPage('a4', orient);
+    const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
+    const W = board.ancho, H = board.largo, m = margenTablero(board);
+    const piezas = b.placed.map((p,i)=>({...p, n:i+1}));
+    const area = piezas.reduce((s,p)=>s+p.w*p.h,0), aprov = (W*H)? area/(W*H)*100 : 0;
+    const rgbMat = hslAArreglo(hslColorFromString(board.material));
+
+    // Encabezado
+    doc.setFillColor(...rgbMat); doc.rect(0,0,pw,22,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(15,23,42);
+    doc.text(`Tablero ${info.numero} de ${info.total} - ${board.material} - espesor ${nf(board.espesor)} mm`, 10, 8);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+    doc.text(`Tablero ${info.secMat} de ${info.totMat} de este material | Medidas: ${nf(W)} x ${nf(H)} mm (ancho x largo) | Kerf: ${kerf} mm | Margen: ${nf(m)} mm`, 10, 14);
+    doc.text(`${piezas.length} piezas | Aprovechamiento ${aprov.toFixed(1)}% | Sobrante ${(100-aprov).toFixed(1)}% (${((W*H-area)/1e6).toFixed(2)} m2)`, 10, 19);
+
+    // Zona de dibujo
+    const leyenda = agruparLeyenda(piezas);
+    const legH = Math.min(12 + leyenda.length*4.6, ph*0.36);
+    const x0 = 22, y0 = 36;
+    const availW = pw - x0 - 12, availH = ph - y0 - 14 - legH;
+    const sc = Math.min(availW/W, availH/H);
+    const bw = W*sc, bh = H*sc, bx = x0 + (availW-bw)/2;
+
+    // Cotas
+    doc.setDrawColor(51,65,85); doc.setLineWidth(0.25); doc.setTextColor(15,23,42); doc.setFontSize(8); doc.setFont('helvetica','bold');
+    doc.line(bx, y0-4, bx+bw, y0-4); doc.line(bx, y0-5.5, bx, y0-2.5); doc.line(bx+bw, y0-5.5, bx+bw, y0-2.5);
+    doc.text(`${nf(W)} mm`, bx+bw/2, y0-6, {align:'center'});
+    doc.line(bx-5, y0, bx-5, y0+bh); doc.line(bx-6.5, y0, bx-3.5, y0); doc.line(bx-6.5, y0+bh, bx-3.5, y0+bh);
+    doc.text(`${nf(H)} mm`, bx-7, y0+bh/2, {align:'center', angle:90});
+
+    // Tablero + margen
+    doc.setFillColor(241,245,249); doc.setDrawColor(51,65,85); doc.setLineWidth(0.5);
+    doc.rect(bx, y0, bw, bh, 'FD');
+    doc.setDrawColor(148,163,184); doc.setLineWidth(0.15); doc.setLineDashPattern([1,1],0);
+    doc.rect(bx+m*sc, y0+m*sc, (W-2*m)*sc, (H-2*m)*sc); doc.setLineDashPattern([],0);
+
+    // Kerf (rojo) bajo las piezas
+    const kb = Math.max(kerf*sc, 0.3);
+    doc.setFillColor(239,68,68);
+    piezas.forEach(p=>{
+      const x = bx+p.x*sc, yy = y0+p.y*sc, w = p.w*sc, h = p.h*sc;
+      doc.rect(x+w, yy, kb, h+kb, 'F'); doc.rect(x, yy+h, w+kb, kb, 'F');
+    });
+    // Piezas
+    doc.setLineWidth(0.2); doc.setDrawColor(15,23,42);
+    piezas.forEach(p=>{
+      const x = bx+p.x*sc, yy = y0+p.y*sc, w = p.w*sc, h = p.h*sc;
+      doc.setFillColor(...hslAArreglo(hslColorFromString(p.material+p.name)));
+      doc.rect(x, yy, w, h, 'FD');
+      const dims = `${nf(p.w)}x${nf(p.h)}`;
+      const lay = textoPiezaPdf(doc, [
+        [{t:`#${p.n} ${p.name}`}, {t:dims, fijo:true}],
+        [{t:`#${p.n}`, fijo:true}, {t:dims, fijo:true}],
+        [{t:`#${p.n}`, fijo:true}]
+      ], w, h);
+      if(lay){
+        doc.setFontSize(lay.fs); doc.setTextColor(15,23,42);
+        const top = yy + h/2 - (lay.lines.length*lay.lh)/2 + lay.lh*0.75;
+        lay.lines.forEach((t,i)=>{ doc.setFont('helvetica', i===0?'bold':'normal'); doc.text(t, x+w/2, top+i*lay.lh, {align:'center'}); });
+      }
+    });
+
+    // Leyenda (tabla de piezas)
+    doc.autoTable({
+      startY: y0+bh+7, margin:{left:12,right:12,bottom:12}, theme:'grid',
+      head:[['#','Pieza','Cant.','Medida final (ancho x largo mm)','Medida original','Girada']],
+      body: leyenda.map(r=>[r.nums, r.name, r.cant, r.med, r.orig, r.girada]),
+      styles:{fontSize:7, cellPadding:1}, headStyles:{fillColor:[15,23,42]},
+      columnStyles:{0:{cellWidth:22},2:{cellWidth:12},5:{cellWidth:14}}
+    });
+    const fy = doc.lastAutoTable.finalY + 4;
+    if(fy < ph-13){
+      doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(71,85,105);
+      doc.text(`Franja roja = separación de sierra entre piezas (${kerf} mm). Zona gris = sobrante. Línea punteada = margen del tablero.`, 12, fy);
+    }
+  });
+
+  // Pie de página
+  const n = doc.getNumberOfPages();
+  for(let i=1;i<=n;i++){
+    doc.setPage(i);
+    const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(100,116,139);
+    doc.text(`Página ${i} de ${n}`, pw-12, ph-6, {align:'right'});
+    doc.text(`Optimización de corte - ${ctx.fecha}`, 12, ph-6);
+  }
+}
+// <<PDF-END
+
+$('btnPdfOptim').onclick = ()=>{
+  if(!STATE.bestResult){ toast('Ejecuta primero la optimización','error'); return; }
+  if(!window.jspdf){ toast('La librería de PDF no se ha cargado; revisa tu conexión','error'); return; }
+  try{
+    const doc = new window.jspdf.jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
+    const ahora = new Date();
+    const r = STATE.bestResult;
+    construirPdfOptimizacion(doc, r, {
+      fecha: ahora.toLocaleString('es-MX'),
+      proyecto: STATE.projectName || 'Sin guardar',
+      modo: (r.mode || 'mixto')
+    });
+    const pad = n=>String(n).padStart(2,'0');
+    doc.save(`optimizacion_corte_${ahora.getFullYear()}${pad(ahora.getMonth()+1)}${pad(ahora.getDate())}.pdf`);
+    toast('PDF de optimización generado','success');
+  }catch(e){
+    console.error(e);
+    toast('Error generando el PDF de optimización','error');
+  }
+};
+
+
+/* =========================================================
+   HOJA DE CORTE
+   ========================================================= */
+$('btnGenHoja').onclick = ()=>{
+  if(!STATE.bestResult){ toast('Ejecuta primero la optimización','error'); return; }
+  const proyecto = $('hojaProyecto').value.trim() || 'Sin nombre';
+  const operador = $('hojaOperador').value.trim();
+  const fecha = $('hojaFecha').value || new Date().toISOString().slice(0,10);
+  const cont = $('hojaOutput');
+  cont.innerHTML = '';
+
+  STATE.bestResult.boards.forEach((b, idx)=>{
+    const div = document.createElement('div');
+    div.className = 'hoja-doc';
+    div.innerHTML = `
+      <h2>Hoja de corte — Tablero ${idx+1}</h2>
+      <div class="hoja-meta">
+        <div class="row"><span>Proyecto:</span><b>${escapeHtml(proyecto)}</b></div>
+        <div class="row"><span>Operador:</span><b>${escapeHtml(operador)||'—'}</b></div>
+        <div class="row"><span>Fecha:</span><b>${fecha}</b></div>
+        <div class="row"><span>Material:</span><b>${b.board.material}</b></div>
+        <div class="row"><span>Medidas tablero:</span><b>${b.board.ancho}×${b.board.largo} mm</b></div>
+        <div class="row"><span>Espesor:</span><b>${b.board.espesor} mm</b></div>
+        <div class="row"><span>Kerf:</span><b>${STATE.params.kerf} mm</b></div>
+        <div class="row"><span>Tolerancias:</span><b>+${STATE.params.tolPos} / -${STATE.params.tolNeg}</b></div>
+      </div>
+      <div class="hoja-plano" id="hojaPlano${idx}"></div>
+      <h3 style="margin-top:18px">Piezas en este tablero</h3>
+      <table class="data-table">
+        <thead><tr><th>#</th><th>Pieza</th><th>Largo</th><th>Ancho</th><th>Rotada</th><th>Veta</th></tr></thead>
+        <tbody>
+          ${b.placed.map((p,i)=>`<tr>
+            <td>${i+1}</td><td>${escapeHtml(p.name)}</td>
+            <td>${Math.round(p.h)}</td><td>${Math.round(p.w)}</td>
+            <td>${p.rotated?'Sí':'No'}</td>
+            <td>${p.veta}</td></tr>`).join('')}
+        </tbody>
+      </table>
+      <p style="margin-top:14px;font-size:12px;color:#64748b">
+        Secuencia sugerida: cortes horizontales de izquierda a derecha, luego verticales de arriba hacia abajo. 
+        Respétese la veta indicada con flechas.
+      </p>`;
+    cont.appendChild(div);
+  });
+
+  // Dibujar mini planos en la hoja
+  setTimeout(()=>{
+    STATE.bestResult.boards.forEach((b, idx)=>{
+      const target = $('hojaPlano'+idx);
+      if(!target) return;
+      // Clonar el plano del tablero correspondiente
+      const prevIdx = +$('selTableroPlano').value;
+      $('selTableroPlano').value = idx;
+      drawPlano(idx);
+      const svg = $('planoContainer').querySelector('svg').cloneNode(true);
+      svg.style.transform = 'none';
+      target.appendChild(svg);
+      $('selTableroPlano').value = prevIdx;
+    });
+    drawPlano(+$('selTableroPlano').value);
+    toast('Hoja de corte generada','success');
+  }, 30);
+};
+
+$('btnPrintHoja').onclick = ()=>{
+  if($('hojaOutput').children.length===0){ toast('Genera primero la hoja','error'); return; }
+  window.print();
+};
+/* =========================================================
+   SOBRANTES
+   ========================================================= */
+function renderSobrantes(){
+  const tbody = $('tablaSobrantes').querySelector('tbody');
+  tbody.innerHTML='';
+  STATE.sobrantes.forEach((s,i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${s.largo}</td><td>${s.ancho}</td><td>${s.espesor}</td>
+      <td>${s.material}</td><td>${s.veta}</td><td>${escapeHtml(s.origen||'')}</td>
+      <td><button class="icon-btn del" data-del="${i}">🗑</button></td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
+    STATE.sobrantes.splice(+b.dataset.del,1); renderSobrantes();
+  });
+  saveAuto();
+}
+$('btnAddSobrante').onclick = ()=>{
+  const s = {
+    largo:+$('sLargo').value, ancho:+$('sAncho').value, espesor:+$('sEspesor').value,
+    material:$('sMaterial').value, veta:$('sVeta').value, origen:$('sOrigen').value.trim()
+  };
+  if(s.largo<=0||s.ancho<=0){ toast('Medidas inválidas','error'); return; }
+  STATE.sobrantes.push(s); renderSobrantes(); toast('Sobrante agregado','success');
+};
+$('btnGenSobrantes').onclick = ()=>{
+  if(!STATE.bestResult){ toast('Ejecuta primero la optimización','error'); return; }
+  let count=0;
+  STATE.bestResult.boards.forEach(b=>{
+    (b.freeRegions||[]).forEach(r=>{
+      if(r.w>=200 && r.h>=200){
+        STATE.sobrantes.push({
+          largo: Math.round(r.h), ancho: Math.round(r.w),
+          espesor: b.board.espesor, material: b.board.material,
+          veta: b.board.veta, origen: b.id
+        });
+        count++;
+      }
+    });
+  });
+  renderSobrantes();
+  toast(count+' sobrantes detectados','success');
+};
+
+/* =========================================================
+   IMPORTAR EXCEL
+   Reglas: solo entran los renglones cuya UNIDAD esté en la lista
+   válida (por defecto HOJA); las tolerancias solo se suman si la
+   celda tiene formato +número; ancho y largo se procesan por
+   separado; las medidas originales se conservan en la pieza.
+   ========================================================= */
+
+// <<PURE-START (lógica sin DOM; se prueba por separado)
+const normTxt = s => String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+const round2 = n => Math.round(n*100)/100;
+
+/** Tolerancia válida solo si la celda es TEXTO con formato +número (ej. "+2", "+0.5").
+ *  Todo lo demás (vacío, 0, 2, -2, N/A, ESC, X, texto) = 0. */
+function parseTolerancia(raw){
+  if(typeof raw !== 'string') return 0;
+  const m = raw.trim().match(/^\+(\d+(?:\.\d+)?)$/);
+  return m ? parseFloat(m[1]) : 0;
+}
+
+function parseNum(raw){
+  if(typeof raw === 'number') return raw;
+  const s = String(raw==null?'':raw).trim().replace(',', '.');
+  return /^\d+(\.\d+)?$/.test(s) ? parseFloat(s) : NaN;
+}
+
+const IMPORT_FIELDS = [
+  {id:'mapNombre',   key:'nombre',   label:'Nombre',            auto:['description','descripcion','nombre','pieza']},
+  {id:'mapUnidad',   key:'unidad',   label:'Unidad',            auto:['unidad','unit']},
+  {id:'mapAncho',    key:'ancho',    label:'Ancho',             auto:['ancho','width']},
+  {id:'mapTolAncho', key:'tolAncho', label:'Ancho tolerancia',  auto:['ancho tolerancia','tolerancia ancho','tol ancho']},
+  {id:'mapLargo',    key:'largo',    label:'Largo',             auto:['largo','long','alto','height']},
+  {id:'mapTolLargo', key:'tolLargo', label:'Largo tolerancia',  auto:['largo tolerancia','tolerancia largo','tol largo']},
+  {id:'mapCant',     key:'cantidad', label:'Cantidad',          auto:['cant/mueble','cantidad','cant','qty']},
+  {id:'mapEspesor',  key:'espesor',  label:'Espesor / Grueso',  auto:['grueso','espesor','thickness']},
+  {id:'mapMaterial', key:'material', label:'Material',          auto:['material']},
+  {id:'mapVeta',     key:'veta',     label:'Veta',              auto:['veta','grain']}
+];
+
+function detectarColumna(cols, f){
+  const names = cols.map(normTxt);
+  const esTol = f.key.startsWith('tol');
+  for(const a of f.auto){ const i = names.indexOf(a); if(i>=0) return i; }
+  for(const a of f.auto){
+    const i = names.findIndex(n => n.includes(a) && (esTol || !n.includes('toler')));
+    if(i>=0) return i;
+  }
+  return -1;
+}
+
+/**
+ * Procesa las filas del Excel. No modifica el Excel ni STATE.
+ * map: {nombre,unidad,ancho,tolAncho,largo,tolLargo,cantidad,espesor,material,veta} -> índice de columna o -1
+ * opts: {unidades:['HOJA'], factor:10 (cm->mm), fileName}
+ */
+function procesarFilasExcel(rows, map, opts){
+  const unidades = (opts.unidades||[]).map(u=>u.trim().toUpperCase()).filter(Boolean);
+  const factor = opts.factor || 1;
+  const items = [], warnings = [];
+  if(map.unidad < 0) warnings.push('No se mapeó la columna Unidad: sin ella no se puede decidir qué renglones optimizar.');
+  if(!unidades.length) warnings.push('No hay unidades válidas definidas.');
+
+  for(let i=1;i<rows.length;i++){
+    const row = rows[i];
+    if(!row || row.every(c=>c===''||c==null)) continue;
+    const get = k => map[k]>=0 ? row[map[k]] : '';
+    const it = {
+      fila:i+1, nombre:String(get('nombre')||('Pieza '+i)).trim(),
+      unidad:String(get('unidad')).trim().toUpperCase(),
+      material:String(get('material')).trim(),
+      tolAnchoTxt:String(get('tolAncho')), tolLargoTxt:String(get('tolLargo')),
+      estado:'ok', motivo:''
+    };
+    items.push(it);
+    if(map.unidad < 0){ it.estado='ignorada'; it.motivo='Sin columna Unidad'; continue; }
+    if(!it.unidad){ it.estado='ignorada'; it.motivo='Unidad vacía'; warnings.push(`Fila ${it.fila}: unidad vacía, no se importa.`); continue; }
+    if(!unidades.includes(it.unidad)){ it.estado='ignorada'; it.motivo='Unidad '+it.unidad+' no optimizable'; continue; }
+
+    const ancho = parseNum(get('ancho')), largo = parseNum(get('largo'));
+    if(!(ancho>0) || !(largo>0)){ it.estado='error'; it.motivo='Falta ancho o largo'; warnings.push(`Fila ${it.fila}: falta ancho o largo.`); continue; }
+    if(!it.material){ it.estado='error'; it.motivo='Falta material'; warnings.push(`Fila ${it.fila}: falta material.`); continue; }
+
+    let cant = parseNum(get('cantidad'));
+    if(!(cant>0)){ it.estado='error'; it.motivo='Falta cantidad'; warnings.push(`Fila ${it.fila}: falta cantidad.`); continue; }
+    if(!Number.isInteger(cant)){ warnings.push(`Fila ${it.fila}: cantidad ${cant} no es entera, se redondea hacia arriba a ${Math.ceil(cant)}.`); cant = Math.ceil(cant); }
+
+    let esp = parseNum(get('espesor'));
+    if(esp>0) esp = round2(esp*factor);
+    else {
+      const m = it.material.match(/(\d+(?:\.\d+)?)\s*MM/i);
+      if(m) esp = parseFloat(m[1]); else esp = NaN;
+    }
+    if(!(esp>0)){ it.estado='error'; it.motivo='Falta espesor'; warnings.push(`Fila ${it.fila}: falta espesor.`); continue; }
+
+    const vetaRaw = normTxt(get('veta'));
+    const veta = vetaRaw.includes('largo') ? 'largo' : vetaRaw.includes('ancho') ? 'ancho' : 'ninguna';
+
+    it.ancho = round2(ancho*factor); it.largo = round2(largo*factor);
+    it.tolAncho = round2(parseTolerancia(get('tolAncho'))*factor);
+    it.tolLargo = round2(parseTolerancia(get('tolLargo'))*factor);
+    it.anchoFinal = round2(it.ancho + it.tolAncho); it.largoFinal = round2(it.largo + it.tolLargo);
+    it.cantidad = cant; it.espesor = esp; it.veta = veta;
+    it.srcKey = (opts.fileName||'excel') + '#' + it.fila;
+  }
+  return { items, warnings };
+}
+// <<PURE-END
+
+let _excelFileName = 'excel';
+
+$('excelFile').onchange = (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  _excelFileName = file.name;
+  const reader = new FileReader();
+  reader.onload = evt=>{
+    try{
+      const data = new Uint8Array(evt.target.result);
+      const wb = XLSX.read(data, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:'', raw:true});
+      if(rows.length < 2){ toast('Archivo vacío o sin datos','error'); return; }
+      STATE.excelRows = rows;
+      STATE.excelCols = rows[0];
+      showExcelMapping();
+    }catch(err){
+      console.error(err);
+      toast('Error leyendo el Excel','error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+};
+
+function showExcelMapping(){
+  const cols = STATE.excelCols;
+  const container = $('excelMapFields');
+  container.innerHTML = '';
+  IMPORT_FIELDS.forEach(f=>{
+    const label = document.createElement('label');
+    label.textContent = f.label;
+    const sel = document.createElement('select');
+    sel.id = f.id;
+    sel.innerHTML = '<option value="-1">— no importar —</option>';
+    cols.forEach((c,i)=>{
+      const opt = document.createElement('option');
+      opt.value = i; opt.textContent = c || ('Col '+(i+1));
+      sel.appendChild(opt);
+    });
+    const idx = detectarColumna(cols, f);
+    if(idx>=0) sel.value = idx;
+    label.appendChild(sel);
+    container.appendChild(label);
+  });
+  $('excelMapCard').style.display='block';
+  document.querySelectorAll('#excelMapFields select').forEach(s=>s.onchange = updateExcelPreview);
+  $('impUnidades').oninput = updateExcelPreview;
+  $('impUnidadMedida').onchange = updateExcelPreview;
+  updateExcelPreview();
+}
+
+function getImportMapping(){
+  const m = {};
+  IMPORT_FIELDS.forEach(f=>{ const el=$(f.id); m[f.key] = el ? +el.value : -1; });
+  return m;
+}
+function getImportOpts(){
+  return {
+    unidades: $('impUnidades').value.split(','),
+    factor: +$('impUnidadMedida').value || 1,
+    fileName: _excelFileName
+  };
+}
+
+function updateExcelPreview(){
+  const rows = STATE.excelRows; if(!rows) return;
+  const cols = STATE.excelCols;
+  const mapping = getImportMapping();
+
+  // Vista previa del Excel original (sin modificar)
+  const thead = $('excelPreviewTable').querySelector('thead');
+  const tbody = $('excelPreviewTable').querySelector('tbody');
+  thead.innerHTML = '<tr>' + cols.map(c=>`<th>${escapeHtml(String(c))}</th>`).join('') + '</tr>';
+  tbody.innerHTML = '';
+  const mapped = Object.values(mapping);
+  for(let i=1;i<Math.min(rows.length, 30);i++){
+    const tr = document.createElement('tr');
+    tr.innerHTML = rows[i].map((c,j)=>{
+      const val = c===undefined?'':c;
+      return `<td style="${mapped.includes(j)?'background:#f0f9ff':''}">${escapeHtml(String(val))}</td>`;
+    }).join('');
+    tbody.appendChild(tr);
+  }
+  $('excelRowCount').textContent = `(${rows.length-1} filas detectadas)`;
+  $('excelPreviewCard').style.display='block';
+
+  // Revisión previa: qué renglones entran y con qué medidas
+  const res = procesarFilasExcel(rows, mapping, getImportOpts());
+  const ok = res.items.filter(x=>x.estado==='ok');
+  const ign = res.items.filter(x=>x.estado==='ignorada').length;
+  const err = res.items.filter(x=>x.estado==='error').length;
+  const piezasTot = ok.reduce((s,x)=>s+x.cantidad,0);
+  $('excelWarnings').innerHTML =
+    `<b>${ok.length}</b> renglones entran a optimización (${piezasTot} piezas) · ${ign} ignorados por unidad · ${err} con error` +
+    (res.warnings.length ? '<br>⚠️ ' + res.warnings.slice(0,12).map(escapeHtml).join('<br>⚠️ ') + (res.warnings.length>12?`<br>… y ${res.warnings.length-12} más`:'') : '');
+  $('excelReviewTable').querySelector('thead').innerHTML =
+    '<tr><th>Fila</th><th>Descripción</th><th>Unidad</th><th>Material</th><th>Esp. (mm)</th><th>Cant.</th>'+
+    '<th>Ancho orig → final</th><th>Tol. ancho</th><th>Largo orig → final</th><th>Tol. largo</th><th>Estado</th></tr>';
+  const rb = $('excelReviewTable').querySelector('tbody');
+  rb.innerHTML = '';
+  res.items.slice(0,400).forEach(x=>{
+    const tr = document.createElement('tr');
+    const bg = x.estado==='ignorada' ? '#f1f5f9;color:#94a3b8' : x.estado==='error' ? '#fee2e2' : '';
+    tr.style.cssText = bg ? 'background:'+bg : '';
+    const med = (o,f,t)=> x.estado==='ok' ? `${fmt(o,1)} → <b>${fmt(f,1)}</b>` : '';
+    tr.innerHTML = `<td>${x.fila}</td><td>${escapeHtml(x.nombre)}</td><td>${escapeHtml(x.unidad)}</td><td>${escapeHtml(x.material)}</td>`+
+      `<td>${x.estado==='ok'?fmt(x.espesor,1):''}</td><td>${x.estado==='ok'?x.cantidad:''}</td>`+
+      `<td>${med(x.ancho,x.anchoFinal)}</td><td>${escapeHtml(x.tolAnchoTxt)}</td>`+
+      `<td>${med(x.largo,x.largoFinal)}</td><td>${escapeHtml(x.tolLargoTxt)}</td>`+
+      `<td>${x.estado==='ok'?'✅ Entra':x.estado==='ignorada'?escapeHtml(x.motivo):'❌ '+escapeHtml(x.motivo)}</td>`;
+    rb.appendChild(tr);
+  });
+  $('excelReviewCard').style.display='block';
+}
+
+function ensureOption(selId, value){
+  const sel = $(selId); if(!sel) return;
+  if(![...sel.options].some(o=>o.value===value || o.text===value)){
+    const o = document.createElement('option'); o.textContent = value; sel.appendChild(o);
+  }
+}
+
+$('btnConfirmImport').onclick = ()=>{
+  const rows = STATE.excelRows; if(!rows) return;
+  const res = procesarFilasExcel(rows, getImportMapping(), getImportOpts());
+  const ok = res.items.filter(x=>x.estado==='ok');
+  const errores = res.items.filter(x=>x.estado==='error').length;
+  const existentes = new Set(STATE.piezas.map(p=>p.srcKey).filter(Boolean));
+  let count = 0, dup = 0;
+  const combos = new Set();
+  ok.forEach(x=>{
+    if(existentes.has(x.srcKey)){ dup++; return; }
+    STATE.piezas.push({
+      id: uid(), nombre: x.nombre, largo: x.largo, ancho: x.ancho,
+      cantidad: x.cantidad, espesor: x.espesor, material: x.material,
+      veta: x.veta, rot: x.veta==='ninguna', obs: '',
+      unidad: x.unidad, tolAncho: x.tolAncho, tolLargo: x.tolLargo,
+      tolAnchoTxt: x.tolAnchoTxt, tolLargoTxt: x.tolLargoTxt, srcKey: x.srcKey
+    });
+    ensureOption('pMaterial', x.material); ensureOption('tMaterial', x.material);
+    combos.add(x.material+'|'+x.espesor);
+    count++;
+  });
+  // Tablero estándar 2440×1220 para cada material/espesor sin tablero registrado
+  let nuevos = 0;
+  combos.forEach(k=>{
+    const [mat, esp] = k.split('|'); const e = +esp;
+    if(!STATE.tableros.some(t=>t.material===mat && +t.espesor===e)){
+      STATE.tableros.push({id:uid(), nombre:`${mat} (auto)`, material:mat, largo:2440, ancho:1220,
+        espesor:e, precio:0, color:'#c8a878', veta:'largo', cantidad:50, margen:0});
+      nuevos++;
+    }
+  });
+  renderPiezas(); renderTableros();
+  const msg = `Importadas ${count} piezas` + (dup?` · ${dup} ya existían`:'') + (errores?` · ${errores} con error`:'') + (nuevos?` · ${nuevos} tableros 2440×1220 creados`:'');
+  toast(msg, errores?'error':'success');
+};
+
+/* =========================================================
+   EXPORTAR
+   ========================================================= */
+function exportXLS(filename, sheets){
+  const wb = XLSX.utils.book_new();
+  Object.entries(sheets).forEach(([name, rows])=>{
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  });
+  XLSX.writeFile(wb, filename);
+}
+$('btnExportTableros').onclick = $('btnExpTabXls').onclick = ()=>{
+  if(!STATE.tableros.length){ toast('Sin tableros','error'); return; }
+  const rows = [['Nombre','Material','Largo','Ancho','Espesor','Precio','Color','Veta','Cantidad']];
+  STATE.tableros.forEach(t=>rows.push([t.nombre,t.material,t.largo,t.ancho,t.espesor,t.precio,t.color,t.veta,t.cantidad]));
+  exportXLS('tableros.xlsx', {Tableros:rows});
+  toast('Excel exportado','success');
+};
+$('btnExportPiezas').onclick = $('btnExpPiezasXls').onclick = ()=>{
+  if(!STATE.piezas.length){ toast('Sin piezas','error'); return; }
+  const rows = [['Nombre','Largo','Ancho','Cantidad','Espesor','Material','Veta','Rotacion','Obs']];
+  STATE.piezas.forEach(p=>rows.push([p.nombre,p.largo,p.ancho,p.cantidad,p.espesor,p.material,p.veta,p.rot?'Sí':'No',p.obs]));
+  exportXLS('piezas.xlsx', {Piezas:rows});
+  toast('Excel exportado','success');
+};
+$('btnExpSobXls').onclick = $('btnExportSobrantes').onclick = ()=>{
+  if(!STATE.sobrantes.length){ toast('Sin sobrantes','error'); return; }
+  const rows = [['Largo','Ancho','Espesor','Material','Veta','Origen']];
+  STATE.sobrantes.forEach(s=>rows.push([s.largo,s.ancho,s.espesor,s.material,s.veta,s.origen]));
+  exportXLS('sobrantes.xlsx', {Sobrantes:rows});
+  toast('Excel exportado','success');
+};
+$('btnExpResXls').onclick = ()=>{
+  if(!STATE.lastResult){ toast('Ejecuta primero la optimización','error'); return; }
+  const rows = [['Modo','Tableros','Piezas colocadas','Área piezas mm²','Área tableros mm²','Desperdicio mm²','Aprovechamiento %','Cortes','Costo','Piezas sin colocar']];
+  STATE.lastResult.forEach(r=>{
+    const m = r.metrics;
+    rows.push([r.name, m.tableros, m.piezasColocadas, m.areaPiezas, m.areaTableros, m.desperdicio, m.aprovechamiento.toFixed(2), m.cortes, m.costo, m.unplaced]);
+  });
+  exportXLS('resultados.xlsx', {Resultados:rows});
+  toast('Excel exportado','success');
+};
+/* =========================================================
+   PDF PLANO
+   ========================================================= */
+$('btnPdfPlano').onclick = ()=>{
+  if(!STATE.bestResult){ toast('Ejecuta primero la optimización','error'); return; }
+  try{
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
+    STATE.bestResult.boards.forEach((b,i)=>{
+      if(i>0) doc.addPage();
+      doc.setFontSize(14);
+      doc.text(`Tablero ${i+1} — ${b.board.nombre}`, 10, 12);
+      doc.setFontSize(10);
+      doc.text(`Material: ${b.board.material} · ${b.board.ancho}×${b.board.largo} mm · Kerf: ${STATE.params.kerf} mm`, 10, 18);
+      // Dibujar rectángulos
+      const pageW = 280, pageH = 180;
+      const padX = 15, padY = 25;
+      const availW = pageW - padX*2;
+      const availH = pageH - padY - 15;
+      const scale = Math.min(availW/b.board.ancho, availH/b.board.largo);
+      // Fondo
+      doc.setDrawColor(50,50,50);
+      doc.setFillColor(245,245,245);
+      doc.rect(padX, padY, b.board.ancho*scale, b.board.largo*scale, 'FD');
+      b.placed.forEach((p,j)=>{
+        const x = padX + p.x*scale;
+        const y = padY + p.y*scale;
+        doc.setDrawColor(0,0,0);
+        const c = hslToRgb(p.material+p.name);
+        doc.setFillColor(c.r,c.g,c.b);
+        doc.rect(x, y, p.w*scale, p.h*scale, 'FD');
+        if(p.w*scale > 15 && p.h*scale > 8){
+          doc.setFontSize(7);
+          doc.text(p.name.substring(0,16), x+1, y+4);
+          doc.text(`${Math.round(p.w)}×${Math.round(p.h)}`, x+1, y+8);
+        } else {
+          doc.setFontSize(6);
+          doc.text(String(j+1), x+1, y+3);
+        }
+      });
+    });
+    doc.save('planos_corte.pdf');
+    toast('PDF generado','success');
+  }catch(e){
+    console.error(e);
+    toast('Error generando PDF','error');
+  }
+};
+function hslToRgb(hslStr){
+  // hslStr aquí es solo un string arbitrario para color; usamos hash
+  let hash=0; for(let i=0;i<hslStr.length;i++) hash = hslStr.charCodeAt(i) + ((hash<<5)-hash);
+  const r = 180 + (Math.abs(hash)%60);
+  const g = 180 + (Math.abs(hash>>8)%60);
+  const b = 180 + (Math.abs(hash>>16)%60);
+  return {r,g,b};
+}
+
+/* =========================================================
+   PROYECTOS (localStorage)
+   ========================================================= */
+function saveAuto(){
+  const data = {
+    tableros: STATE.tableros,
+    piezas: STATE.piezas,
+    sobrantes: STATE.sobrantes,
+    params: STATE.params,
+    projectName: STATE.projectName
+  };
+  try{
+    localStorage.setItem('opticorte_autosave', JSON.stringify(data));
+  }catch(e){ console.warn('No se pudo guardar',e); }
+}
+
+function loadAuto(){
+  try{
+    const raw = localStorage.getItem('opticorte_autosave');
+    if(!raw) return false;
+    const data = JSON.parse(raw);
+    if(data.tableros) STATE.tableros = data.tableros;
+    if(data.piezas) STATE.piezas = data.piezas;
+    if(data.sobrantes) STATE.sobrantes = data.sobrantes;
+    if(data.params) STATE.params = {...STATE.params, ...data.params};
+    if(data.projectName) STATE.projectName = data.projectName;
+    return true;
+  }catch(e){ return false; }
+}
+
+$('btnSaveProj').onclick = ()=>{
+  const name = prompt('Nombre del proyecto:', STATE.projectName);
+  if(!name) return;
+  STATE.projectName = name;
+  const data = {
+    tableros: STATE.tableros, piezas: STATE.piezas, sobrantes: STATE.sobrantes,
+    params: STATE.params, projectName: name, savedAt: new Date().toISOString()
+  };
+  const list = JSON.parse(localStorage.getItem('opticorte_projects')||'{}');
+  list[name] = data;
+  localStorage.setItem('opticorte_projects', JSON.stringify(list));
+  $('projInfo').innerHTML = `Proyecto: <b>${escapeHtml(name)}</b>`;
+  toast('Proyecto guardado','success');
+};
+$('btnLoadProj').onclick = ()=>{
+  const list = JSON.parse(localStorage.getItem('opticorte_projects')||'{}');
+  const names = Object.keys(list);
+  if(!names.length){ toast('No hay proyectos guardados','error'); return; }
+  const sel = prompt('Proyecto a cargar:\n' + names.join('\n'), names[0]);
+  if(!sel || !list[sel]) return;
+  const data = list[sel];
+  STATE.tableros = data.tableros; STATE.piezas = data.piezas;
+  STATE.sobrantes = data.sobrantes; STATE.params = data.params;
+  STATE.projectName = data.projectName;
+  renderTableros(); renderPiezas(); renderSobrantes(); loadParamsUI();
+  $('projInfo').innerHTML = `Proyecto: <b>${escapeHtml(sel)}</b>`;
+  toast('Proyecto cargado','success');
+};
+$('btnNewProj').onclick = ()=>{
+  if(!confirm('¿Crear nuevo proyecto? Se perderán los cambios no guardados.')) return;
+  STATE.tableros = []; STATE.piezas = []; STATE.sobrantes = [];
+  STATE.lastResult = null; STATE.projectName = 'Sin guardar';
+  renderTableros(); renderPiezas(); renderSobrantes();
+  $('projInfo').innerHTML = 'Proyecto: <b>Sin guardar</b>';
+  toast('Nuevo proyecto');
+};
+$('btnExpProj').onclick = ()=>{
+  const data = {tableros:STATE.tableros, piezas:STATE.piezas, sobrantes:STATE.sobrantes, params:STATE.params, projectName:STATE.projectName};
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (STATE.projectName||'proyecto')+'.json';
+  a.click();
+};
+$('btnImpProj').onclick = ()=> $('projFile').click();
+$('projFile').onchange = (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = evt=>{
+    try{
+      const data = JSON.parse(evt.target.result);
+      if(data.tableros) STATE.tableros = data.tableros;
+      if(data.piezas) STATE.piezas = data.piezas;
+      if(data.sobrantes) STATE.sobrantes = data.sobrantes;
+      if(data.params) STATE.params = data.params;
+      if(data.projectName) STATE.projectName = data.projectName;
+      renderTableros(); renderPiezas(); renderSobrantes(); loadParamsUI();
+      $('projInfo').innerHTML = `Proyecto: <b>${escapeHtml(STATE.projectName)}</b>`;
+      toast('Proyecto importado','success');
+    }catch(err){ toast('Archivo inválido','error'); }
+  };
+  reader.readAsText(file);
+};
+
+/* =========================================================
+   UTILIDADES
+   ========================================================= */
+function escapeHtml(s){
+  return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* =========================================================
+   INIT
+   ========================================================= */
+function init(){
+  const hadData = loadAuto();
+  bindParams();
+  loadParamsUI();
+  renderTableros();
+  renderPiezas();
+  renderSobrantes();
+  $('hojaFecha').value = new Date().toISOString().slice(0,10);
+  if(hadData){
+    $('projInfo').innerHTML = `Proyecto: <b>${escapeHtml(STATE.projectName)}</b>`;
+    toast('Datos previos recuperados');
+  } else {
+    // Cargar un tablero de ejemplo por defecto para que el usuario pueda probar rápido
+    STATE.tableros.push({
+      id: uid(), nombre:'Melamina blanca', material:'Melamina',
+      largo:2440, ancho:1220, espesor:18, precio:850, color:'#c8a878',
+      veta:'largo', cantidad:10, margen:0
+    });
+    renderTableros();
+  }
+}
+document.addEventListener('DOMContentLoaded', init);
+
+/* =========================================================
+   FIN DEL ARCHIVO script.js
+   ========================================================= */
+</script>
 </body>
 </html>
