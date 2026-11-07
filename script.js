@@ -337,17 +337,25 @@ function margenTablero(board){
 }
 
 /**
- * Orientaciones permitidas de una pieza (rotación y veta). Una sola regla para todos los modos.
- * veta 'largo' -> solo normal; veta 'ancho' -> solo girada (si el control de veta está activo).
+ * Orientaciones permitidas de una pieza en un tablero (rotación + veta).
+ * La veta del tablero ('largo' = corre sobre el eje largo/vertical, 'ancho' = sobre el eje ancho/horizontal)
+ * y la veta de la pieza ('largo' = corre sobre su medida largo, 'ancho' = sobre su medida ancho)
+ * deben coincidir cuando "Respetar veta siempre" está activo. Sin veta en pieza o tablero: solo manda la rotación.
  */
-function orientaciones(piece){
+function orientaciones(piece, board){
   const normal = {w:piece.w, h:piece.h, rot:false};
   const girada = {w:piece.h, h:piece.w, rot:true};
-  if(STATE.params.veta){
-    if(piece.veta==='largo') return [normal];
-    if(piece.veta==='ancho') return [girada];
-  }
-  return piece.rot ? [normal, girada] : [normal];
+  const libres = piece.rot ? [normal, girada] : [normal];
+  if(!STATE.params.veta || (piece.veta!=='largo' && piece.veta!=='ancho')) return libres;
+  const grano = board && board.veta;
+  if(grano!=='largo' && grano!=='ancho') return libres;         // tablero sin veta: nada que respetar
+  const ejeTablero = grano==='largo' ? 'y' : 'x';
+  const ejeNormal  = piece.veta==='largo' ? 'y' : 'x';          // eje de la veta de la pieza sin girar
+  const ejeGirada  = ejeNormal==='y' ? 'x' : 'y';
+  const ok = [];
+  if(ejeNormal===ejeTablero) ok.push(normal);
+  if(ejeGirada===ejeTablero) ok.push(girada);
+  return ok;
 }
 
 /** ¿Cabe la pieza en el tablero (con márgenes), en alguna orientación permitida? */
@@ -355,7 +363,7 @@ function pieceFitsInBoard(p, board){
   const m = margenTablero(board);
   const availW = board.ancho - 2*m;
   const availH = board.largo - 2*m;
-  return orientaciones(p).some(o => o.w <= availW + 1e-9 && o.h <= availH + 1e-9);
+  return orientaciones(p, board).some(o => o.w <= availW + 1e-9 && o.h <= availH + 1e-9);
 }
 
 /* =========================================================
@@ -379,7 +387,7 @@ function optimizeGuillotine(pieces, board, opts){
   function mejorEncaje(piece){
     let best = null;
     freeRegions.forEach((reg,ri)=>{
-      for(const o of orientaciones(piece)){
+      for(const o of orientaciones(piece, board)){
         if(o.w <= reg.w+EPS && o.h <= reg.h+EPS){
           const sobraW = reg.w-o.w, sobraH = reg.h-o.h;
           const score = Math.min(sobraW,sobraH)*1e5 + Math.max(sobraW,sobraH);
@@ -459,7 +467,7 @@ function optimizeMaxRects(pieces, board){
   function findBestPosition(piece){
     let best = null;
     for(const fr of freeRects){
-      for(const o of orientaciones(piece)){
+      for(const o of orientaciones(piece, board)){
         if(o.w <= fr.w + 1e-9 && o.h <= fr.h + 1e-9){
           // Heurística: mejor ajuste (menor área sobrante)
           const leftover = (fr.w*fr.h) - (o.w*o.h);
@@ -501,6 +509,64 @@ function optimizeMaxRects(pieces, board){
  * y del MaxRects, comparando resultados. Escoge el que deje menos tableros
  * y menos desperdicio, con un desempate por número de cortes estimados.
  */
+/**
+ * Corte por franjas (guillotina de dos etapas).
+ * sentido 'longitud': primero cortes paralelos al LARGO del tablero -> franjas verticales a lo largo
+ *                     (las piezas se apilan dentro de cada franja).
+ * sentido 'anchura' : primero cortes a lo ANCHO -> franjas horizontales (piezas lado a lado).
+ */
+function optimizeFranjas(pieces, board, opts){
+  const m = margenTablero(board), kerf = STATE.params.kerf, EPS = 0.01;
+  const porLongitud = opts.sentido === 'longitud';
+  const availW = board.ancho-2*m, availH = board.largo-2*m;
+  const Ltot = porLongitud ? availH : availW;     // eje a lo largo de la franja
+  const Ctot = porLongitud ? availW : availH;     // eje transversal (suma de franjas)
+  const lc = o => porLongitud ? {l:o.h, c:o.w} : {l:o.w, c:o.h};
+  const orientsDe = piece => orientaciones(piece, board).map(o=>({o, ...lc(o)})).filter(x=>x.l<=Ltot+EPS && x.c<=Ctot+EPS);
+
+  const unplaced = [], validas = [];
+  pieces.forEach(p=>{ const os = orientsDe(p); if(os.length) validas.push({p, os, cMin: Math.min(...os.map(x=>x.c))}); else unplaced.push(p); });
+  validas.sort((a,b)=> b.cMin-a.cMin || (b.p.w*b.p.h)-(a.p.w*a.p.h));
+
+  const franjas = [], placed = [];
+  let usedC = 0;
+  for(const {p:piece, os} of validas){
+    let best = null;
+    franjas.forEach((f,fi)=>{
+      os.forEach(x=>{
+        const needL = f.usado + (f.n? kerf:0) + x.l;
+        if(x.c <= f.c+EPS && needL <= Ltot+EPS){
+          const score = (Ltot-needL) + (f.c-x.c)*3;
+          if(!best || score < best.score) best = {fi, x, score};
+        }
+      });
+    });
+    if(!best){
+      os.forEach(x=>{
+        const needC = usedC + (franjas.length? kerf:0) + x.c;
+        if(needC <= Ctot+EPS){
+          const score = x.c*1000 + (Ltot-x.l);
+          if(!best || score < best.score) best = {x, score, needC};
+        }
+      });
+      if(best){ franjas.push({c0: franjas.length? usedC+kerf : 0, c: best.x.c, usado:0, n:0}); usedC = best.needC; best.fi = franjas.length-1; }
+    }
+    if(!best){ unplaced.push(piece); continue; }
+    const f = franjas[best.fi], x = best.x;
+    const lOff = f.usado + (f.n? kerf:0);
+    f.usado = lOff + x.l; f.n++;
+    const px = m + (porLongitud ? f.c0 : lOff), py = m + (porLongitud ? lOff : f.c0);
+    placed.push({...piece, x:px, y:py, w:x.o.w, h:x.o.h, rotated:x.o.rot, boardId:board.instanceId});
+  }
+
+  const rect = (c0,c,l0,len)=> porLongitud ? {x:m+c0,y:m+l0,w:c,h:len} : {x:m+l0,y:m+c0,w:len,h:c};
+  const freeRegions = [];
+  franjas.forEach(f=>{ const l0=f.usado+kerf; if(Ltot-l0>EPS) freeRegions.push(rect(f.c0,f.c,l0,Ltot-l0)); });
+  const cSobra = franjas.length ? usedC+kerf : 0;
+  if(Ctot-cSobra>EPS) freeRegions.push(rect(cSobra, Ctot-cSobra, 0, Ltot));
+  return { placed, unplaced, freeRegions, cuts: franjas.length + placed.length };
+}
+
 function optimizeMixed(pieces, board){
   const orden = {
     'Guillotine-área':   [...pieces].sort((a,b)=>(b.w*b.h)-(a.w*a.h)),
@@ -509,6 +575,8 @@ function optimizeMixed(pieces, board){
   };
   const variants = Object.entries(orden).map(([name,list])=>({name, result: optimizeGuillotine(list, board, {keepOrder:true})}));
   variants.push({ name:'MaxRects', result: optimizeMaxRects(pieces, board) });
+  variants.push({ name:'Por longitud', result: optimizeFranjas(pieces, board, {sentido:'longitud'}) });
+  variants.push({ name:'Por anchura', result: optimizeFranjas(pieces, board, {sentido:'anchura'}) });
 
   // Mejor variante = más área de pieza colocada en este tablero
   let best = variants[0];
@@ -541,7 +609,9 @@ function runMode(modeName){
   const modeFns = {
     'guillotine': optimizeGuillotine,
     'maxrects': optimizeMaxRects,
-    'mixto': optimizeMixed
+    'mixto': optimizeMixed,
+    'longitud': (p,b)=>optimizeFranjas(p,b,{sentido:'longitud'}),
+    'anchura':  (p,b)=>optimizeFranjas(p,b,{sentido:'anchura'})
   };
   const fn = modeFns[modeName];
 
@@ -584,7 +654,7 @@ function runMode(modeName){
       });
       remaining = res.unplaced;
       boardIdx++;
-      totalCuts += estimateCuts(res.placed, modeName);
+      totalCuts += (res.cuts!==undefined ? res.cuts : estimateCuts(res.placed, modeName));
     }
     if(remaining.length > 0){
       unplacedAll.push(...remaining.map(p=>({...p, reason:'Sin tableros suficientes'})));
@@ -605,6 +675,14 @@ function validarResultado(result, totalEsperado){
   const errs = [], kerf = STATE.params.kerf, EPS = 0.01;
   result.boards.forEach(b=>{
     const m = margenTablero(b.board);
+    const grano = b.board.veta;
+    if(STATE.params.veta && (grano==='largo' || grano==='ancho')){
+      b.placed.forEach(p=>{
+        if(p.veta!=='largo' && p.veta!=='ancho') return;
+        const ejePieza = ((p.veta==='largo') !== !!p.rotated) ? 'y' : 'x';
+        if(ejePieza !== (grano==='largo' ? 'y' : 'x')) errs.push(`${b.id}: "${p.name}" quedó con la veta en sentido contrario al tablero`);
+      });
+    }
     b.placed.forEach((p,i)=>{
       if(p.x < m-EPS || p.y < m-EPS || p.x+p.w > b.board.ancho-m+EPS || p.y+p.h > b.board.largo-m+EPS)
         errs.push(`${b.id}: "${p.name}" excede el tablero`);
@@ -662,40 +740,48 @@ function countReusable(board){
 /* =========================================================
    BOTÓN PRINCIPAL: CALCULAR
    ========================================================= */
-$('btnOptimize').onclick = ()=>{
+/**
+ * Ejecuta una o varias estrategias de corte y muestra resultados.
+ * estrategias: [{name, mode, status?}]  (mode = 'longitud'|'anchura'|'guillotine'|'maxrects'|'mixto')
+ */
+function ejecutarOptimizacion(estrategias){
   if(STATE.tableros.length === 0){ toast('Registra al menos un tablero','error'); return; }
   if(STATE.piezas.length === 0){ toast('Registra al menos una pieza','error'); return; }
-
   const bar = $('optProgress');
   bar.style.display='block';
   bar.firstElementChild.style.width='10%';
 
   setTimeout(()=>{
-    bar.firstElementChild.style.width='30%';
-    const rG = runMode('guillotine');
-    bar.firstElementChild.style.width='55%';
-    const rM = runMode('maxrects');
-    bar.firstElementChild.style.width='80%';
-    const rX = runMode('mixto');
+    const results = estrategias.map((e,i)=>{
+      bar.firstElementChild.style.width = Math.round(10 + 85*(i+1)/estrategias.length)+'%';
+      const r = runMode(e.mode);
+      return { name:e.name, result:r, metrics:computeMetrics(r), status: e.status || 'Solución heurística' };
+    });
     bar.firstElementChild.style.width='100%';
+    results.forEach(x=>{ if(x.name==='Mixto' && x.result.unplaced.length===0) x.status='Mejor evaluada (no demostrada óptima)'; });
 
-    const results = [
-      { name:'Guillotine', result:rG, metrics: computeMetrics(rG), status:'Solución heurística' },
-      { name:'MaxRects', result:rM, metrics: computeMetrics(rM), status:'Solución heurística' },
-      { name:'Mixto', result:rX, metrics: computeMetrics(rX), status: rX.unplaced.length===0 ? 'Mejor evaluada (no demostrada óptima)' : 'Solución heurística' }
-    ];
-
-    const fallas = [rG,rM,rX].flatMap(r=>r.validation||[]);
+    const fallas = results.flatMap(x=>x.result.validation||[]);
     if(fallas.length){ console.error('Validación de optimización:', fallas); toast('⚠️ La validación detectó '+fallas.length+' problema(s); revisa la consola','error'); }
     STATE.lastResult = results;
     renderComparison(results);
     renderPlanoSelector(results);
-    renderSavings(results);
-    $('savingsCard').style.display='block';
+    if(results.length > 1){ renderSavings(results); $('savingsCard').style.display='block'; }
+    else $('savingsCard').style.display='none';
     setTimeout(()=>bar.style.display='none', 500);
-    toast('Optimización completada','success');
+    if(!fallas.length) toast('Optimización completada','success');
   }, 60);
-};
+}
+
+$('btnOptLongitud').onclick = ()=> ejecutarOptimizacion([{name:'Por longitud', mode:'longitud'}]);
+$('btnOptAnchura').onclick  = ()=> ejecutarOptimizacion([{name:'Por anchura',  mode:'anchura'}]);
+// ÓPTIMO: compara todos los métodos y se queda con el mejor según el criterio de prioridad
+$('btnOptimize').onclick = ()=> ejecutarOptimizacion([
+  {name:'Por longitud', mode:'longitud'},
+  {name:'Por anchura',  mode:'anchura'},
+  {name:'Guillotine',   mode:'guillotine'},
+  {name:'MaxRects',     mode:'maxrects'},
+  {name:'Mixto',        mode:'mixto'}
+]);
 
 function pickBest(results){
   const crit = STATE.params.criterio;
@@ -730,13 +816,15 @@ function renderComparison(results){
     tbody.appendChild(tr);
   });
   $('comparisonCard').style.display='block';
-  $('bestModeBox').innerHTML = `✅ Mejor resultado según criterio <b>"${STATE.params.criterio}"</b>: <b>${best.name}</b> — ${best.metrics.tableros} tableros, ${best.metrics.aprovechamiento.toFixed(2)}% aprovechamiento.`;
+  $('bestModeBox').innerHTML = results.length===1
+    ? `✅ Resultado del método <b>${best.name}</b> — ${best.metrics.tableros} tableros, ${best.metrics.aprovechamiento.toFixed(2)}% aprovechamiento.`
+    : `✅ Mejor resultado según criterio <b>"${STATE.params.criterio}"</b>: <b>${best.name}</b> — ${best.metrics.tableros} tableros, ${best.metrics.aprovechamiento.toFixed(2)}% aprovechamiento.`;
   $('statModo').textContent = best.name;
   $('statAprov').textContent = best.metrics.aprovechamiento.toFixed(1)+'%';
 }
 
 function renderSavings(results){
-  // Referencia = Guillotine básico (nuestro método menos optimizado entre los 3)
+  // Referencia = Guillotine básico (el método más simple)
   const ref = results.find(r=>r.name==='Guillotine');
   const best = pickBest(results);
   if(!ref || !best) return;
@@ -747,7 +835,7 @@ function renderSavings(results){
   $('saveM2').textContent = areaAhorrada.toFixed(3)+' m²';
   $('saveMoney').textContent = '$'+fmt(ahorroMoney,2);
   $('saveWaste').textContent = best.metrics.desperdicio>0 ? fmt(best.metrics.desperdicio/1e6,3)+' m²' : '0';
-  $('savingsNote').innerHTML = `Método de referencia: <b>Guillotine básico</b> (el más simple de los tres). ` +
+  $('savingsNote').innerHTML = `Método de referencia: <b>Guillotine básico</b> (el más simple de los métodos). ` +
     `El ahorro mostrado es la diferencia entre ese método y el mejor según el criterio <b>"${STATE.params.criterio}"</b>. ` +
     `No se trata de un óptimo matemático demostrado, sino del mejor resultado encontrado por nuestras heurísticas.`;
 }
@@ -788,6 +876,7 @@ function applyZoom(){
 }
 
 // <<PLANO-START (sin DOM; se prueba por separado)
+const textoVeta = v => v==='largo' ? 'a lo largo' : v==='ancho' ? 'a lo ancho' : 'sin veta';
 const nf = n => Number.isInteger(+n) ? fmt(n,0) : fmt(n,1);
 const escSvg = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const truncTxt = (s,n)=> s.length>n ? s.slice(0,Math.max(1,n-1))+'…' : s;
@@ -869,7 +958,7 @@ function construirPlanoSVG(b, info, opts){
   // Encabezado
   s += `<text x="${left-30}" y="24" font-size="17" font-weight="700" fill="#0f172a">Tablero ${info.numero} de ${info.total} — ${escSvg(board.material)} · espesor ${nf(board.espesor)} mm</text>`;
   s += `<text x="${left-30}" y="44" font-size="12.5" fill="#334155">Tablero ${info.secMat} de ${info.totMat} de este material · Medidas: ${fmt(W)} × ${fmt(H)} mm (ancho × largo)</text>`;
-  s += `<text x="${left-30}" y="62" font-size="12.5" fill="#334155">Corte de sierra (kerf): ${kerf} mm · Margen perimetral: ${nf(m)} mm</text>`;
+  s += `<text x="${left-30}" y="62" font-size="12.5" fill="#334155">Corte de sierra (kerf): ${kerf} mm · Margen perimetral: ${nf(m)} mm · Veta del tablero: ${textoVeta(board.veta)}</text>`;
   s += `<text x="${left-30}" y="80" font-size="12.5" font-weight="600" fill="#166534">${piezas.length} piezas · Aprovechamiento ${aprov.toFixed(1)}% · Sobrante ${(100-aprov).toFixed(1)}% (${fmt((areaTab-areaPiezas)/1e6,2)} m²)</text>`;
 
   // Cotas del tablero
@@ -1121,7 +1210,7 @@ function construirPdfOptimizacion(doc, result, ctx){
     doc.text(`Tablero ${info.numero} de ${info.total} - ${board.material} - espesor ${nf(board.espesor)} mm`, 10, 8);
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
     doc.text(`Tablero ${info.secMat} de ${info.totMat} de este material | Medidas: ${nf(W)} x ${nf(H)} mm (ancho x largo) | Kerf: ${kerf} mm | Margen: ${nf(m)} mm`, 10, 14);
-    doc.text(`${piezas.length} piezas | Aprovechamiento ${aprov.toFixed(1)}% | Sobrante ${(100-aprov).toFixed(1)}% (${((W*H-area)/1e6).toFixed(2)} m2)`, 10, 19);
+    doc.text(`${piezas.length} piezas | Aprovechamiento ${aprov.toFixed(1)}% | Sobrante ${(100-aprov).toFixed(1)}% (${((W*H-area)/1e6).toFixed(2)} m2) | Veta: ${textoVeta(board.veta)}`, 10, 19);
 
     // Zona de dibujo
     const leyenda = agruparLeyenda(piezas);
@@ -1427,8 +1516,14 @@ function procesarFilasExcel(rows, map, opts){
     }
     if(!(esp>0)){ it.estado='error'; it.motivo='Falta espesor'; warnings.push(`Fila ${it.fila}: falta espesor.`); continue; }
 
+    // Veta: la del Excel si existe; si no, la que se elija en la revisión (por defecto: a lo largo del tablero)
     const vetaRaw = normTxt(get('veta'));
-    const veta = vetaRaw.includes('largo') ? 'largo' : vetaRaw.includes('ancho') ? 'ancho' : 'ninguna';
+    let veta = ['largo','ancho','ninguna'].includes(opts.vetaDefault) ? opts.vetaDefault : 'ninguna';
+    if(vetaRaw){
+      if(vetaRaw.includes('largo')) veta = 'largo';
+      else if(vetaRaw.includes('ancho')) veta = 'ancho';
+      else if(/^(sin|ninguna|no$|x$|n\/a|na$)/.test(vetaRaw)) veta = 'ninguna';
+    }
 
     it.ancho = round2(ancho*factor); it.largo = round2(largo*factor);
     it.tolAncho = round2(parseTolerancia(get('tolAncho'))*factor);
@@ -1489,6 +1584,7 @@ function showExcelMapping(){
   document.querySelectorAll('#excelMapFields select').forEach(s=>s.onchange = updateExcelPreview);
   $('impUnidades').oninput = updateExcelPreview;
   $('impUnidadMedida').onchange = updateExcelPreview;
+  $('impVeta').onchange = updateExcelPreview;
   updateExcelPreview();
 }
 
@@ -1501,6 +1597,7 @@ function getImportOpts(){
   return {
     unidades: $('impUnidades').value.split(','),
     factor: +$('impUnidadMedida').value || 1,
+    vetaDefault: $('impVeta') ? $('impVeta').value : 'largo',
     fileName: _excelFileName
   };
 }
@@ -1537,7 +1634,7 @@ function updateExcelPreview(){
     `<b>${ok.length}</b> renglones entran a optimización (${piezasTot} piezas) · ${ign} ignorados por unidad · ${err} con error` +
     (res.warnings.length ? '<br>⚠️ ' + res.warnings.slice(0,12).map(escapeHtml).join('<br>⚠️ ') + (res.warnings.length>12?`<br>… y ${res.warnings.length-12} más`:'') : '');
   $('excelReviewTable').querySelector('thead').innerHTML =
-    '<tr><th>Fila</th><th>Descripción</th><th>Unidad</th><th>Material</th><th>Esp. (mm)</th><th>Cant.</th>'+
+    '<tr><th>Fila</th><th>Descripción</th><th>Unidad</th><th>Material</th><th>Esp. (mm)</th><th>Cant.</th><th>Veta</th>'+
     '<th>Ancho orig → final</th><th>Tol. ancho</th><th>Largo orig → final</th><th>Tol. largo</th><th>Estado</th></tr>';
   const rb = $('excelReviewTable').querySelector('tbody');
   rb.innerHTML = '';
@@ -1547,7 +1644,7 @@ function updateExcelPreview(){
     tr.style.cssText = bg ? 'background:'+bg : '';
     const med = (o,f,t)=> x.estado==='ok' ? `${fmt(o,1)} → <b>${fmt(f,1)}</b>` : '';
     tr.innerHTML = `<td>${x.fila}</td><td>${escapeHtml(x.nombre)}</td><td>${escapeHtml(x.unidad)}</td><td>${escapeHtml(x.material)}</td>`+
-      `<td>${x.estado==='ok'?fmt(x.espesor,1):''}</td><td>${x.estado==='ok'?x.cantidad:''}</td>`+
+      `<td>${x.estado==='ok'?fmt(x.espesor,1):''}</td><td>${x.estado==='ok'?x.cantidad:''}</td><td>${x.estado==='ok'?x.veta:''}</td>`+
       `<td>${med(x.ancho,x.anchoFinal)}</td><td>${escapeHtml(x.tolAnchoTxt)}</td>`+
       `<td>${med(x.largo,x.largoFinal)}</td><td>${escapeHtml(x.tolLargoTxt)}</td>`+
       `<td>${x.estado==='ok'?'✅ Entra':x.estado==='ignorada'?escapeHtml(x.motivo):'❌ '+escapeHtml(x.motivo)}</td>`;
