@@ -301,6 +301,23 @@ function applyTolerance(p){
 /**
  * Expande piezas en unidades individuales por material+espesor.
  */
+/** Nombre de la pieza para los planos: lo que está después del ÚLTIMO guión ("IFD4221BFT - ENTREPAÑO" -> "ENTREPAÑO"). */
+function nombreCorto(n){
+  const t = String(n==null ? '' : n).trim();
+  const i = t.lastIndexOf('-');
+  const corto = i>=0 ? t.slice(i+1).trim() : t;
+  return corto || t;
+}
+
+/** Texto "Cortes para: IFD4221BFF: 20 muebles" con los habilitados incluidos (para encabezados de hojas). */
+function textoMuebles(){
+  const inc = (STATE.habilitados||[]).filter(h=>h.incluir && h.muebles>0);
+  const manuales = STATE.piezas.some(p=>!p.habId && cantidadTotal(p)>0);
+  const partes = inc.map(h=>`${h.nombre}: ${h.muebles} mueble${h.muebles>1?'s':''}`);
+  if(manuales) partes.push('piezas manuales');
+  return partes.length ? 'Cortes para: ' + partes.join(' · ') : '';
+}
+
 /** Huella de todo lo que influye en el cálculo; si cambia, el resultado mostrado quedó desactualizado. */
 function firmaDatos(){
   return JSON.stringify([
@@ -344,7 +361,7 @@ function expandPieces(){
       const dim = applyTolerance(p);
       grouped[key].pieces.push({
         id: p.id + '_' + i,
-        name: p.nombre,
+        name: nombreCorto(p.nombre),
         origId: p.id,
         w: dim.w, h: dim.h,
         ow: p.ancho, oh: p.largo,
@@ -798,6 +815,15 @@ function calcularResultados(estrategias, onPaso){
   if(results.length > 1){ renderSavings(results); $('savingsCard').style.display='block'; }
   else $('savingsCard').style.display='none';
   actualizarAvisoResultado();
+  const el = $('avisoSinColocar');
+  if(el){
+    const sin = STATE.bestResult ? STATE.bestResult.unplaced : [];
+    if(sin.length){
+      const mot = [...new Set(sin.map(p=>p.reason||'Sin tablero disponible'))].join('; ');
+      el.innerHTML = `⚠️ <b>${sin.length} pieza(s) NO se pudieron colocar</b> (${escapeHtml(mot)}). Si es por falta de tableros, aumenta la cantidad disponible en Tableros y vuelve a calcular.`;
+      el.style.display = 'block';
+    } else el.style.display = 'none';
+  }
   return { results, fallas };
 }
 
@@ -973,6 +999,34 @@ function infoTablero(boards, idx, unplaced){
   return { numero: idx+1, total: boards.length, secMat: mismos.indexOf(b)+1, totMat: mismos.length, totales: totalesPorCorte(boards, unplaced) };
 }
 
+/**
+ * Ajusta el nombre COMPLETO dentro de un recuadro rw×rh: prueba horizontal y vertical (girado -90°),
+ * con saltos de línea entre palabras, bajando el tamaño de letra hasta que quepa.
+ * ancho(str, fs) -> ancho del texto; k = unidades por punto de letra (1 en px, 0.3528 en mm).
+ * Devuelve {lines, fs, lh, vertical} o null si ni con la letra mínima cabe.
+ */
+function ajustarNombre(texto, rw, rh, fsMax, fsMin, ancho, k){
+  if(rw<=0 || rh<=0) return null;
+  const palabras = String(texto).split(/\s+/).filter(Boolean);
+  const envolver = (maxW, fs)=>{
+    const lines = []; let cur = '';
+    for(const w of palabras){
+      const t = cur ? cur+' '+w : w;
+      if(!cur || ancho(t,fs) <= maxW) cur = t; else { lines.push(cur); cur = w; }
+    }
+    if(cur) lines.push(cur);
+    return lines.every(l=>ancho(l,fs) <= maxW) ? lines : null;
+  };
+  for(let fs=fsMax; fs>=fsMin-1e-9; fs-=0.5){
+    const lh = fs*k*1.2;
+    let L = envolver(rw, fs);
+    if(L && L.length*lh <= rh) return {lines:L, fs, lh, vertical:false};
+    L = envolver(rh, fs);
+    if(L && L.length*lh <= rw) return {lines:L, fs, lh, vertical:true};
+  }
+  return null;
+}
+
 /** Elige tamaño de letra y texto que quepan DENTRO de la pieza; si no caben, devuelve null. */
 function layoutTextoPieza(lineas, pw, ph){
   const C = 0.6; // ancho medio de un carácter ≈ 0.6 × tamaño
@@ -998,7 +1052,7 @@ function construirPlanoSVG(b, info, opts){
   const W = board.ancho, H = board.largo, kerf = P.kerf, m = margenTablero(board);
   const scale = Math.min(860/W, 760/H, 1.2);
   const bw = W*scale, bh = H*scale;
-  const top = 122, left = 70, right = 30;
+  const top = 138, left = 70, right = 30;
   const svgW = Math.max(left+bw+right, 600);
   const x0 = left + (svgW-left-right-bw)/2, y0 = top;
   const uid2 = 'p'+info.numero;
@@ -1036,6 +1090,9 @@ function construirPlanoSVG(b, info, opts){
   s += `<text x="${left-30}" y="62" font-size="12.5" fill="#334155">Corte de sierra (kerf): ${kerf} mm · Margen perimetral: ${nf(m)} mm · Veta del tablero: ${textoVeta(board.veta)}</text>`;
   s += `<text x="${left-30}" y="80" font-size="12.5" font-weight="600" fill="#166534">${piezas.length} piezas · Aprovechamiento ${aprov.toFixed(1)}% · Sobrante ${(100-aprov).toFixed(1)}% (${fmt((areaTab-areaPiezas)/1e6,2)} m²)</text>`;
 
+  const mueb = textoMuebles();
+  if(mueb) s += `<text x="${left-30}" y="98" font-size="12.5" font-weight="600" fill="#1d4ed8">${escSvg(truncTxt(mueb,120))}</text>`;
+
   // Cotas del tablero
   const ty = y0-16;
   s += `<g stroke="#334155" stroke-width="1" fill="none"><line x1="${x0}" y1="${ty}" x2="${x0+bw}" y2="${ty}"/><line x1="${x0}" y1="${ty-4}" x2="${x0}" y2="${ty+4}"/><line x1="${x0+bw}" y1="${ty-4}" x2="${x0+bw}" y2="${ty+4}"/>`+
@@ -1069,34 +1126,29 @@ function construirPlanoSVG(b, info, opts){
         ? `<line x1="${x+7}" y1="${y+h*0.2}" x2="${x+7}" y2="${y+h*0.8}" stroke="#7c2d12" stroke-width="1.4" marker-end="url(#arr${uid2})"/>`
         : `<line x1="${x+w*0.2}" y1="${y+h-7}" x2="${x+w*0.8}" y2="${y+h-7}" stroke="#7c2d12" stroke-width="1.4" marker-end="url(#arr${uid2})"/>`;
     }
-    // Medidas centradas sobre cada lado: ancho arriba, alto a la izquierda (si caben); nombre al centro
+    // Medidas centradas sobre cada lado (ancho arriba, alto a la izquierda); nombre COMPLETO al centro
     const sw = nf(p.w), sh = nf(p.h);
-    const fe = Math.max(9, Math.min(12, Math.min(w,h)/9)), pad = fe+5;
-    const topOk  = opts.showDims && w >= sw.length*fe*0.6+8 && h >= pad*2+2;
-    const leftOk = opts.showDims && h >= sh.length*fe*0.6+8 && w >= pad*2+2;
+    const fe = Math.max(7, Math.min(12, Math.min(w,h)/9)), pad = fe+3;
+    const topOk  = opts.showDims && w >= sw.length*fe*0.6+6 && h >= pad*2+2;
+    const leftOk = opts.showDims && h >= sh.length*fe*0.6+6 && w >= pad*2+2;
     const enLados = topOk && leftOk;
     let rx = x, ry = y, rw = w, rh = h;
     if(enLados){
       s += `<text x="${x+w/2}" y="${y+fe+1}" text-anchor="middle" font-size="${fe.toFixed(1)}" font-weight="600" fill="#0f172a">${sw}</text>`;
       s += `<text transform="translate(${x+fe+1} ${y+h/2}) rotate(-90)" text-anchor="middle" font-size="${fe.toFixed(1)}" font-weight="600" fill="#0f172a">${sh}</text>`;
-      rx = x+pad; ry = y+pad; rw = w-2*pad; rh = h-2*pad;
+      rx = x+pad; ry = y+pad; rw = w-pad-2; rh = h-pad-2;   // solo se reserva el lado donde está cada medida
     }
-    const dims = `${sw}×${sh}`, cands = [];
-    if(enLados){
-      if(opts.showLabels) cands.push([{t:`#${p.n} ${p.name}`,min:6}]);
-      cands.push([{t:`#${p.n}`,fijo:true}]);
-    } else {
-      if(opts.showLabels && opts.showDims) cands.push([{t:`#${p.n} ${p.name}`,min:6},{t:dims,fijo:true}]);
-      if(opts.showDims) cands.push([{t:`#${p.n}`,fijo:true},{t:dims,fijo:true}]);
-      if(opts.showLabels) cands.push([{t:`#${p.n} ${p.name}`,min:6}]);
-      cands.push([{t:`#${p.n}`,fijo:true}]);
-    }
-    let lay = null;
-    for(const c of cands){ lay = layoutTextoPieza(c, rw, rh); if(lay) break; }
+    const nombreTxt = opts.showLabels ? `#${p.n} ${p.name}` : `#${p.n}`;
+    const texto = enLados ? nombreTxt : (opts.showDims ? `${nombreTxt} ${sw}×${sh}` : nombreTxt);
+    const anchoPx = (str,fs)=> str.length*fs*0.62;
+    let lay = ajustarNombre(texto, rw-4, rh-3, 12, 5.5, anchoPx, 1) || ajustarNombre(`#${p.n}`, rw-2, rh-2, 12, 5, anchoPx, 1);
     if(lay){
-      const lhh = lay.fs*1.3, cx = rx+rw/2, cy = ry+rh/2 - (lay.lineas.length-1)*lhh/2;
-      lay.lineas.forEach((t,i)=>{
-        s += `<text x="${cx}" y="${cy+i*lhh}" text-anchor="middle" dominant-baseline="middle" font-size="${lay.fs.toFixed(1)}" font-weight="${i===0?700:500}" fill="#0f172a">${escSvg(t)}</text>`;
+      const cx = rx+rw/2, cy = ry+rh/2;
+      lay.lines.forEach((t,i)=>{
+        const off = (i-(lay.lines.length-1)/2)*lay.lh;
+        s += lay.vertical
+          ? `<text transform="translate(${cx} ${cy}) rotate(-90)" y="${off}" text-anchor="middle" dominant-baseline="middle" font-size="${lay.fs.toFixed(1)}" font-weight="600" fill="#0f172a">${escSvg(t)}</text>`
+          : `<text x="${cx}" y="${cy+off}" text-anchor="middle" dominant-baseline="middle" font-size="${lay.fs.toFixed(1)}" font-weight="600" fill="#0f172a">${escSvg(t)}</text>`;
       });
     }
   });
@@ -1201,8 +1253,8 @@ function agruparLeyenda(placed, totales){
   return Object.values(g).map(o=>({
     nums: compactarNumeros(o.nums), name:o.name, cant:o.nums.length,
     total: (totales && totales[o.name+'|'+o.fw+'|'+o.fh]) ? totales[o.name+'|'+o.fw+'|'+o.fh].total : o.nums.length,
-    med: `${nf(o.fw)} x ${nf(o.fh)}`,
-    orig: (o.ow!==undefined && (Math.abs(o.ow-o.fw)>0.01 || Math.abs(o.oh-o.fh)>0.01)) ? `${nf(o.ow)} x ${nf(o.oh)}` : '-',
+    med: `${nf(o.fw)} x ${nf(o.fh)}` + ((o.ow!==undefined && (Math.abs(o.ow-o.fw)>0.01 || Math.abs(o.oh-o.fh)>0.01)) ? ` (orig. ${nf(o.ow)} x ${nf(o.oh)})` : ''),
+    orig: '-',
     girada: o.rot ? 'Sí' : ''
   }));
 }
@@ -1312,98 +1364,113 @@ function construirPdfOptimizacion(doc, result, ctx){
     });
   }
 
-  // ---------- Una página por tablero ----------
+  // ---------- Una página por tablero: hoja HORIZONTAL y tablero girado 90° (largo en horizontal) ----------
+  const muebTxt = textoMuebles();
   boards.forEach((b,idx)=>{
     const board = b.board, info = infoTablero(boards, idx, result.unplaced);
-    const orient = board.ancho > board.largo ? 'landscape' : 'portrait';
-    doc.addPage('a4', orient);
+    doc.addPage('a4','landscape');
     const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
     const W = board.ancho, H = board.largo, m = margenTablero(board);
+    const R = H >= W;                                   // girar si el largo es mayor que el ancho
     const piezas = b.placed.map((p,i)=>({...p, n:i+1}));
-    const area = piezas.reduce((s,p)=>s+p.w*p.h,0), aprov = (W*H)? area/(W*H)*100 : 0;
+    const area = piezas.reduce((s2,p)=>s2+p.w*p.h,0), aprov = (W*H)? area/(W*H)*100 : 0;
     const rgbMat = hslAArreglo(hslColorFromString(board.material));
 
     // Encabezado
-    doc.setFillColor(...rgbMat); doc.rect(0,0,pw,22,'F');
+    doc.setFillColor(...rgbMat); doc.rect(0,0,pw,28,'F');
     doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(15,23,42);
     doc.text(`Tablero ${info.numero} de ${info.total} - ${board.material} - espesor ${nf(board.espesor)} mm`, 10, 8);
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
-    doc.text(`Tablero ${info.secMat} de ${info.totMat} de este material | Medidas: ${nf(W)} x ${nf(H)} mm (ancho x largo) | Kerf: ${kerf} mm | Margen: ${nf(m)} mm`, 10, 14);
-    doc.text(`${piezas.length} piezas | Aprovechamiento ${aprov.toFixed(1)}% | Sobrante ${(100-aprov).toFixed(1)}% (${((W*H-area)/1e6).toFixed(2)} m2) | Veta: ${textoVeta(board.veta)}`, 10, 19);
+    doc.text(`Tablero ${info.secMat} de ${info.totMat} de este material | Medidas: ${nf(W)} x ${nf(H)} mm (ancho x largo) | Kerf: ${kerf} mm | Margen: ${nf(m)} mm | Veta: ${textoVeta(board.veta)}${R?' | Dibujo girado 90 grados':''}`, 10, 14);
+    doc.text(`${piezas.length} piezas | Aprovechamiento ${aprov.toFixed(1)}% | Sobrante ${(100-aprov).toFixed(1)}% (${((W*H-area)/1e6).toFixed(2)} m2)`, 10, 19);
+    if(muebTxt){ doc.setFont('helvetica','bold'); doc.setTextColor(30,64,175); doc.text(doc.splitTextToSize(muebTxt, pw-20)[0], 10, 24.5); doc.setTextColor(15,23,42); }
 
-    // Zona de dibujo
+    // Leyenda en 1, 2 o 3 columnas según cuántos cortes distintos haya
     const leyenda = agruparLeyenda(piezas, info.totales);
-    const legH = Math.min(20 + leyenda.length*4.8, ph*0.40);
-    const x0 = 22, y0 = 36;
-    const availW = pw - x0 - 12, availH = ph - y0 - 14 - legH;
-    const sc = Math.min(availW/W, availH/H);
-    const bw = W*sc, bh = H*sc, bx = x0 + (availW-bw)/2;
+    const ncol = leyenda.length<=5 ? 1 : leyenda.length<=10 ? 2 : 3;
+    const porCol = Math.ceil(leyenda.length/ncol);
+    const legH = 15 + porCol*5.4;
+
+    // Zona de dibujo (el tablero ocupa el ancho de la hoja)
+    const x0 = 26, y0 = 40;
+    const availW = pw - x0 - 12, availH = ph - y0 - 24 - legH;
+    const BW = R ? H : W, BH = R ? W : H;               // tamaño visible del tablero en la hoja
+    const sc = Math.min(availW/BW, availH/BH);
+    const bw = BW*sc, bh = BH*sc, bx = x0 + (availW-bw)/2, by = y0;
+    // tablero -> hoja (giro de 90° en sentido antihorario si R)
+    const T = (x,y,w,h)=> R ? {x:bx+y*sc, y:by+(W-x-w)*sc, w:h*sc, h:w*sc} : {x:bx+x*sc, y:by+y*sc, w:w*sc, h:h*sc};
 
     // Cotas
     doc.setDrawColor(51,65,85); doc.setLineWidth(0.25); doc.setTextColor(15,23,42); doc.setFontSize(8); doc.setFont('helvetica','bold');
-    doc.line(bx, y0-4, bx+bw, y0-4); doc.line(bx, y0-5.5, bx, y0-2.5); doc.line(bx+bw, y0-5.5, bx+bw, y0-2.5);
-    doc.text(`${nf(W)} mm`, bx+bw/2, y0-6, {align:'center'});
-    doc.line(bx-5, y0, bx-5, y0+bh); doc.line(bx-6.5, y0, bx-3.5, y0); doc.line(bx-6.5, y0+bh, bx-3.5, y0+bh);
-    doc.text(`${nf(H)} mm`, bx-7, y0+bh/2, {align:'center', angle:90});
+    doc.line(bx, by-4, bx+bw, by-4); doc.line(bx, by-5.5, bx, by-2.5); doc.line(bx+bw, by-5.5, bx+bw, by-2.5);
+    doc.text(`${nf(BW)} mm`, bx+bw/2, by-6, {align:'center'});
+    doc.line(bx-5, by, bx-5, by+bh); doc.line(bx-6.5, by, bx-3.5, by); doc.line(bx-6.5, by+bh, bx-3.5, by+bh);
+    doc.text(`${nf(BH)} mm`, bx-7, by+bh/2+doc.getTextWidth(`${nf(BH)} mm`)/2, {angle:90});
 
-    // Tablero + margen
+    // Tablero y margen
     doc.setFillColor(241,245,249); doc.setDrawColor(51,65,85); doc.setLineWidth(0.5);
-    doc.rect(bx, y0, bw, bh, 'FD');
+    doc.rect(bx, by, bw, bh, 'FD');
+    const mr = T(m, m, W-2*m, H-2*m);
     doc.setDrawColor(148,163,184); doc.setLineWidth(0.15); doc.setLineDashPattern([1,1],0);
-    doc.rect(bx+m*sc, y0+m*sc, (W-2*m)*sc, (H-2*m)*sc); doc.setLineDashPattern([],0);
+    doc.rect(mr.x, mr.y, mr.w, mr.h); doc.setLineDashPattern([],0);
 
-    // Kerf (rojo) bajo las piezas
-    const kb = Math.max(kerf*sc, 0.3);
+    // Kerf (franjas rojas) bajo las piezas
     doc.setFillColor(239,68,68);
     piezas.forEach(p=>{
-      const x = bx+p.x*sc, yy = y0+p.y*sc, w = p.w*sc, h = p.h*sc;
-      doc.rect(x+w, yy, kb, h+kb, 'F'); doc.rect(x, yy+h, w+kb, kb, 'F');
+      [T(p.x+p.w, p.y, kerf, p.h+kerf), T(p.x, p.y+p.h, p.w+kerf, kerf)].forEach(r=>{
+        doc.rect(r.x, r.y, Math.max(r.w,0.3), Math.max(r.h,0.3), 'F');
+      });
     });
+
     // Piezas
     doc.setLineWidth(0.2); doc.setDrawColor(15,23,42);
     piezas.forEach(p=>{
-      const x = bx+p.x*sc, yy = y0+p.y*sc, w = p.w*sc, h = p.h*sc;
+      const r = T(p.x, p.y, p.w, p.h);
       doc.setFillColor(...hslAArreglo(hslColorFromString(p.material+p.name)));
-      doc.rect(x, yy, w, h, 'FD');
-      // Medidas centradas sobre cada lado (ancho arriba, alto a la izquierda) si caben; nombre al centro
-      const sw = nf(p.w), sh = nf(p.h);
-      const fe = Math.max(7, Math.min(10, Math.min(w,h)/5)), th = fe*0.3528, pad = th+2.4;
-      doc.setFont('helvetica','bold'); doc.setFontSize(fe);
-      const topOk  = doc.getTextWidth(sw)+2 <= w && h >= pad*2+2;
-      const leftOk = doc.getTextWidth(sh)+2 <= h && w >= pad*2+2;
+      doc.rect(r.x, r.y, r.w, r.h, 'FD');
+      const sw = nf(R ? p.h : p.w), sh = nf(R ? p.w : p.h);   // medida del lado horizontal / vertical en la hoja
+      const fe = Math.max(5, Math.min(9, Math.min(r.w,r.h)/5)), th = fe*0.3528, pad = th+1.8;
+      doc.setFont('helvetica','bold'); doc.setFontSize(fe); doc.setTextColor(15,23,42);
+      const topOk  = doc.getTextWidth(sw)+2 <= r.w && r.h >= pad*2+2;
+      const leftOk = doc.getTextWidth(sh)+2 <= r.h && r.w >= pad*2+2;
       const enLados = topOk && leftOk;
-      let rx = x, ry = yy, rw = w, rh = h;
-      doc.setTextColor(15,23,42);
+      let rx = r.x, ry = r.y, rw = r.w, rh = r.h;
       if(enLados){
-        doc.text(sw, x+w/2, yy+th+1.4, {align:'center'});
-        doc.text(sh, x+th+1.4, yy+h/2, {align:'center', angle:90});
-        rx = x+pad; ry = yy+pad; rw = w-2*pad; rh = h-2*pad;
+        doc.text(sw, r.x+r.w/2, r.y+th+1.2, {align:'center'});
+        doc.text(sh, r.x+th+1.2, r.y+r.h/2+doc.getTextWidth(sh)/2, {angle:90});
+        rx = r.x+pad; ry = r.y+pad; rw = r.w-pad-1; rh = r.h-pad-1;   // solo se reserva el lado donde está cada medida
       }
-      const dims = `${sw}x${sh}`;
-      const cands = enLados
-        ? [[{t:`#${p.n} ${p.name}`}], [{t:`#${p.n}`, fijo:true}]]
-        : [[{t:`#${p.n} ${p.name}`}, {t:dims, fijo:true}], [{t:`#${p.n}`, fijo:true}, {t:dims, fijo:true}], [{t:`#${p.n}`, fijo:true}]];
-      const lay = textoPiezaPdf(doc, cands, rw, rh);
+      const nombreTxt = `#${p.n} ${p.name}`;
+      const texto = enLados ? nombreTxt : `${nombreTxt} ${sw}x${sh}`;
+      const anchoPdf = (str,fs)=>{ doc.setFont('helvetica','bold'); doc.setFontSize(fs); return doc.getTextWidth(str); };
+      const lay = ajustarNombre(texto, rw-1.2, rh-1, 8, 3.5, anchoPdf, 0.3528) || ajustarNombre(`#${p.n}`, rw-0.8, rh-0.8, 8, 3, anchoPdf, 0.3528);
       if(lay){
-        doc.setFontSize(lay.fs); doc.setTextColor(15,23,42);
-        const top = ry + rh/2 - (lay.lines.length*lay.lh)/2 + lay.lh*0.75;
-        lay.lines.forEach((t,i)=>{ doc.setFont('helvetica', i===0?'bold':'normal'); doc.text(t, rx+rw/2, top+i*lay.lh, {align:'center'}); });
+        doc.setFont('helvetica','bold'); doc.setFontSize(lay.fs); doc.setTextColor(15,23,42);
+        const cx = rx+rw/2, cy = ry+rh/2;
+        lay.lines.forEach((t,i)=>{
+          const off = (i-(lay.lines.length-1)/2)*lay.lh;
+          if(lay.vertical) doc.text(t, cx+off+lay.lh*0.3, cy+doc.getTextWidth(t)/2, {angle:90});
+          else doc.text(t, cx, cy+off+lay.lh*0.3, {align:'center'});
+        });
       }
     });
 
-    // Leyenda (tabla de piezas)
-    doc.autoTable({
-      startY: y0+bh+7, margin:{left:12,right:12,bottom:12}, theme:'grid',
-      head:[['#','Pieza','En este tablero','Se ocupan en total','Medida final (mm)','Original (mm)','Girada']],
-      body: leyenda.map(r=>[r.nums, r.name, r.cant, r.total, r.med, r.orig, r.girada]),
-      styles:{fontSize:7, cellPadding:1}, headStyles:{fillColor:[15,23,42]},
-      columnStyles:{0:{cellWidth:20},2:{cellWidth:19},3:{cellWidth:21},4:{cellWidth:28},5:{cellWidth:28},6:{cellWidth:13}}
-    });
-    const fy = doc.lastAutoTable.finalY + 4;
-    if(fy < ph-13){
-      doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(71,85,105);
-      doc.text(`Franja roja = separación de sierra entre piezas (${kerf} mm). Zona gris = sobrante. Línea punteada = margen del tablero.`, 12, fy);
+    // Leyenda (tabla de cortes) en columnas
+    const gap = 4, colW = ncol===1 ? Math.min(170, pw-24) : (pw-24-(ncol-1)*gap)/ncol;
+    for(let c=0;c<ncol;c++){
+      const filas = leyenda.slice(c*porCol, (c+1)*porCol);
+      if(!filas.length) continue;
+      const left = 12 + c*(colW+gap);
+      doc.autoTable({
+        startY: by+bh+7, margin:{left, right: pw-left-colW, bottom:14}, tableWidth: colW, theme:'grid',
+        head:[['#','Pieza','Aquí','Se ocupan','Medida final (mm)']],
+        body: filas.map(r=>[r.nums, r.name, r.cant, r.total, r.med]),
+        styles:{fontSize:6.5, cellPadding:0.8}, headStyles:{fillColor:[15,23,42], fontSize:6.2},
+        columnStyles:{0:{cellWidth:13},2:{cellWidth:9},3:{cellWidth:14}}
+      });
     }
+    doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(71,85,105);
+    doc.text('Aquí = piezas de ese corte en este tablero. Se ocupan = total de ese corte en todo el trabajo. Franja roja = separación de sierra (' + kerf + ' mm). Línea punteada = margen.', 12, ph-10.5);
   });
 
   // Pie de página
@@ -1841,8 +1908,9 @@ $('btnConfirmImport').onclick = ()=>{
   if(count>0) STATE.habilitados.push(hab);
   renderPiezas(); renderTableros(); renderHabilitados();
   const msg = `Importadas ${count} piezas` + (dup?` · ${dup} ya existían`:'') + (errores?` · ${errores} con error`:'') + (nuevos?` · ${nuevos} tableros 2440×1220 creados`:'');
-  toast(msg + (count>0 ? ` · habilitado "${hab.nombre}" × ${hab.muebles} mueble(s)` : ''), errores?'error':'success');
-  if(count>0) document.querySelector('.nav-btn[data-section="habilitados"]').click();
+  if(count===0 && dup>0) toast('Ese archivo ya estaba importado: cambia su cantidad de muebles en Habilitados (no se duplicó nada).','error');
+  else toast(msg + (count>0 ? ` · habilitado "${hab.nombre}" × ${hab.muebles} mueble(s)` : ''), errores?'error':'success');
+  if(count>0 || dup>0) document.querySelector('.nav-btn[data-section="habilitados"]').click();
 };
 
 /* =========================================================
@@ -1947,7 +2015,36 @@ function hslToRgb(hslStr){
 /* =========================================================
    HABILITADOS (cada Excel importado = un habilitado con N muebles)
    ========================================================= */
+/** Piezas importadas con una versión anterior (sin habilitado): se agrupan por archivo en un habilitado de 1 mueble. */
+function migrarHabilitadosLegacy(){
+  const huerfanas = STATE.piezas.filter(p=>!p.habId && p.srcKey);
+  if(!huerfanas.length) return;
+  const grupos = {};
+  huerfanas.forEach(p=>{ const arch = String(p.srcKey).split('#')[0]; (grupos[arch] = grupos[arch] || []).push(p); });
+  Object.entries(grupos).forEach(([arch, ps])=>{
+    const h = {id: uid(), nombre: arch.replace(/\.[^.]+$/,''), muebles: 1, incluir: true, archivo: arch};
+    STATE.habilitados.push(h); ps.forEach(p=>{ p.habId = h.id; });
+  });
+}
+
+/** Resumen del cálculo que se va a hacer (se muestra en Habilitados y junto a los botones de cálculo). */
+function actualizarResumenHab(){
+  const inc = STATE.habilitados.filter(h=>h.incluir && h.muebles>0);
+  const piezasHab = inc.reduce((n,h)=>n+totalPiezasHab(h),0);
+  const manuales = STATE.piezas.filter(p=>!p.habId).reduce((n,p)=>n+cantidadTotal(p),0);
+  const detalle = inc.map(h=>`<b>${escapeHtml(h.nombre)} × ${h.muebles} mueble${h.muebles===1?'':'s'}</b>`).join(', ');
+  if($('countHab')) $('countHab').textContent = STATE.habilitados.length;
+  if($('habResumen')) $('habResumen').innerHTML = STATE.habilitados.length
+    ? `Se cortarán juntos <b>${inc.length}</b> habilitado(s): ${detalle || '—'}.<br>Total: <b>${piezasHab}</b> piezas de habilitados` + (manuales?` + <b>${manuales}</b> piezas manuales`:'') + '.'
+    : 'Aún no hay habilitados. Importa un Excel en "Importar Excel" y aparecerá aquí.';
+  if($('optResumenEntrada')) $('optResumenEntrada').innerHTML = (piezasHab+manuales)
+    ? `📋 Se calculará para: ${detalle || 'solo piezas manuales'}${manuales && detalle?' + piezas manuales':''} → <b>${piezasHab+manuales}</b> piezas en total. <button class="btn btn-sm btn-outline" id="btnIrHab" style="margin-left:6px">Cambiar muebles</button>`
+    : '📋 No hay piezas para cortar: importa un Excel o revisa los habilitados incluidos y su cantidad de muebles.';
+  if($('btnIrHab')) $('btnIrHab').onclick = ()=> document.querySelector('.nav-btn[data-section="habilitados"]').click();
+}
+
 function renderHabilitados(){
+  migrarHabilitadosLegacy();
   const tb = $('tablaHab').querySelector('tbody');
   tb.innerHTML = '';
   STATE.habilitados.forEach(h=>{
@@ -1969,10 +2066,15 @@ function renderHabilitados(){
     STATE.habilitados.find(h=>h.id===c.dataset.inc).incluir = c.checked;
     renderHabilitados(); renderPiezas();
   });
-  tb.querySelectorAll('[data-mue]').forEach(i=>i.onchange=()=>{
-    const h = STATE.habilitados.find(x=>x.id===i.dataset.mue);
-    h.muebles = Math.max(0, Math.floor(+i.value||0));
-    renderHabilitados(); renderPiezas();
+  tb.querySelectorAll('[data-mue]').forEach(i=>{
+    const aplicar = (completo)=>{
+      const h = STATE.habilitados.find(x=>x.id===i.dataset.mue);
+      h.muebles = Math.max(0, Math.floor(+i.value||0));
+      if(completo){ renderHabilitados(); renderPiezas(); }
+      else { const t = $('habTot_'+h.id); if(t) t.textContent = totalPiezasHab(h); actualizarResumenHab(); saveAuto(); actualizarAvisoResultado(); }
+    };
+    i.oninput = ()=>aplicar(false);      // se aplica mientras escribes (no depende de salir del campo)
+    i.onchange = ()=>aplicar(true);
   });
   tb.querySelectorAll('[data-ren]').forEach(b=>b.onclick=()=>{
     const h = STATE.habilitados.find(x=>x.id===b.dataset.ren);
@@ -1985,14 +2087,7 @@ function renderHabilitados(){
     STATE.habilitados = STATE.habilitados.filter(x=>x.id!==h.id);
     renderHabilitados(); renderPiezas();
   });
-  const inc = STATE.habilitados.filter(h=>h.incluir && h.muebles>0);
-  const piezasHab = inc.reduce((n,h)=>n+totalPiezasHab(h),0);
-  const manuales = STATE.piezas.filter(p=>!p.habId).reduce((n,p)=>n+cantidadTotal(p),0);
-  $('countHab').textContent = STATE.habilitados.length;
-  $('habResumen').innerHTML = STATE.habilitados.length
-    ? `Se cortarán juntos <b>${inc.length}</b> habilitado(s): ${inc.map(h=>`${escapeHtml(h.nombre)} ×${h.muebles}`).join(', ') || '—'}.<br>` +
-      `Total: <b>${piezasHab}</b> piezas de habilitados` + (manuales?` + <b>${manuales}</b> piezas manuales`:'') + '.'
-    : 'Aún no hay habilitados. Importa un Excel en "Importar Excel" y aparecerá aquí.';
+  actualizarResumenHab();
   saveAuto();
   actualizarAvisoResultado();
 }
