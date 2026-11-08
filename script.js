@@ -301,6 +301,16 @@ function applyTolerance(p){
 /**
  * Expande piezas en unidades individuales por material+espesor.
  */
+/** Huella de todo lo que influye en el cálculo; si cambia, el resultado mostrado quedó desactualizado. */
+function firmaDatos(){
+  return JSON.stringify([
+    STATE.piezas.map(p=>[p.id,p.cantidad,p.largo,p.ancho,p.material,p.espesor,p.veta,p.rot,p.tolAncho,p.tolLargo,p.habId]),
+    (STATE.habilitados||[]).map(h=>[h.id,h.muebles,h.incluir]),
+    STATE.tableros.map(t=>[t.id,t.material,t.espesor,t.largo,t.ancho,t.cantidad,t.veta,t.margen]),
+    STATE.params
+  ]);
+}
+
 /** Habilitado al que pertenece un renglón (o null si es una pieza manual). */
 function habilitadoDe(p){ return p.habId ? (STATE.habilitados||[]).find(h=>h.id===p.habId) || null : null; }
 
@@ -771,33 +781,53 @@ function countReusable(board){
  * Ejecuta una o varias estrategias de corte y muestra resultados.
  * estrategias: [{name, mode, status?}]  (mode = 'longitud'|'anchura'|'guillotine'|'maxrects'|'mixto')
  */
+function calcularResultados(estrategias, onPaso){
+  const results = estrategias.map((e,i)=>{
+    if(onPaso) onPaso(i, estrategias.length);
+    const r = runMode(e.mode);
+    return { name:e.name, result:r, metrics:computeMetrics(r), status: e.status || 'Solución heurística' };
+  });
+  results.forEach(x=>{ if(x.name==='Mixto' && x.result.unplaced.length===0) x.status='Mejor evaluada (no demostrada óptima)'; });
+  const fallas = results.flatMap(x=>x.result.validation||[]);
+  if(fallas.length){ console.error('Validación de optimización:', fallas); toast('⚠️ La validación detectó '+fallas.length+' problema(s); revisa la consola','error'); }
+  STATE.lastResult = results;
+  STATE.firmaResultado = firmaDatos();
+  STATE.ultimasEstrategias = estrategias;
+  renderComparison(results);
+  renderPlanoSelector(results);
+  if(results.length > 1){ renderSavings(results); $('savingsCard').style.display='block'; }
+  else $('savingsCard').style.display='none';
+  actualizarAvisoResultado();
+  return { results, fallas };
+}
+
+/** Muestra el aviso si se cambiaron piezas, muebles, tableros o parámetros después del último cálculo. */
+function actualizarAvisoResultado(){
+  const el = $('avisoDesactualizado'); if(!el) return;
+  el.style.display = (STATE.firmaResultado && STATE.firmaResultado !== firmaDatos()) ? 'block' : 'none';
+}
+
 function ejecutarOptimizacion(estrategias){
   if(STATE.tableros.length === 0){ toast('Registra al menos un tablero','error'); return; }
   if(STATE.piezas.length === 0){ toast('Registra al menos una pieza','error'); return; }
+  if(!STATE.piezas.some(p=>cantidadTotal(p)>0)){ toast('No hay piezas para cortar: revisa los habilitados incluidos y su cantidad de muebles','error'); return; }
   const bar = $('optProgress');
   bar.style.display='block';
   bar.firstElementChild.style.width='10%';
-
   setTimeout(()=>{
-    const results = estrategias.map((e,i)=>{
-      bar.firstElementChild.style.width = Math.round(10 + 85*(i+1)/estrategias.length)+'%';
-      const r = runMode(e.mode);
-      return { name:e.name, result:r, metrics:computeMetrics(r), status: e.status || 'Solución heurística' };
-    });
+    const { fallas } = calcularResultados(estrategias, (i,n)=>{ bar.firstElementChild.style.width = Math.round(10 + 85*(i+1)/n)+'%'; });
     bar.firstElementChild.style.width='100%';
-    results.forEach(x=>{ if(x.name==='Mixto' && x.result.unplaced.length===0) x.status='Mejor evaluada (no demostrada óptima)'; });
-
-    const fallas = results.flatMap(x=>x.result.validation||[]);
-    if(fallas.length){ console.error('Validación de optimización:', fallas); toast('⚠️ La validación detectó '+fallas.length+' problema(s); revisa la consola','error'); }
-    STATE.lastResult = results;
-    renderComparison(results);
-    renderPlanoSelector(results);
-    if(results.length > 1){ renderSavings(results); $('savingsCard').style.display='block'; }
-    else $('savingsCard').style.display='none';
     setTimeout(()=>bar.style.display='none', 500);
     if(!fallas.length) toast('Optimización completada','success');
   }, 60);
 }
+
+$('btnRecalcular').onclick = ()=>{
+  if(STATE.ultimasEstrategias){ calcularResultados(STATE.ultimasEstrategias); toast('Planos recalculados con los datos actuales','success'); }
+};
+// Cualquier cambio en datos o parámetros revisa si el cálculo mostrado sigue vigente
+document.addEventListener('change', ()=> setTimeout(actualizarAvisoResultado,0));
+document.addEventListener('input',  ()=> setTimeout(actualizarAvisoResultado,0));
 
 $('btnOptLongitud').onclick = ()=> ejecutarOptimizacion([{name:'Por longitud', mode:'longitud'}]);
 $('btnOptAnchura').onclick  = ()=> ejecutarOptimizacion([{name:'Por anchura',  mode:'anchura'}]);
@@ -919,11 +949,28 @@ function compactarNumeros(nums){
   return out.join(', ');
 }
 
+const claveCorte = p => p.name+'|'+(p.rotated? p.h : p.w)+'|'+(p.rotated? p.w : p.h);
+
+/** Total de cada corte (mismo nombre y medida) en todos los tableros, más lo que no se pudo colocar. */
+function totalesPorCorte(boards, unplaced){
+  const t = {};
+  const add = (p, tablero)=>{
+    const k = claveCorte(p);
+    const o = t[k] = t[k] || {name:p.name, fw:(p.rotated? p.h : p.w), fh:(p.rotated? p.w : p.h), ow:p.ow, oh:p.oh,
+                              material:p.material, espesor:p.espesor, total:0, sin:0, tableros:new Set()};
+    o.total++;
+    if(tablero) o.tableros.add(tablero); else o.sin++;
+  };
+  boards.forEach((b,i)=>b.placed.forEach(p=>add(p,i+1)));
+  (unplaced||[]).forEach(p=>add(p,0));
+  return t;
+}
+
 /** Numeración del tablero: global y dentro de su material/espesor. */
-function infoTablero(boards, idx){
+function infoTablero(boards, idx, unplaced){
   const b = boards[idx];
   const mismos = boards.filter(x=>x.board.material===b.board.material && +x.board.espesor===+b.board.espesor);
-  return { numero: idx+1, total: boards.length, secMat: mismos.indexOf(b)+1, totMat: mismos.length };
+  return { numero: idx+1, total: boards.length, secMat: mismos.indexOf(b)+1, totMat: mismos.length, totales: totalesPorCorte(boards, unplaced) };
 }
 
 /** Elige tamaño de letra y texto que quepan DENTRO de la pieza; si no caben, devuelve null. */
@@ -971,7 +1018,8 @@ function construirPlanoSVG(b, info, opts){
   });
   const leyenda = Object.values(grupos).map(g=>{
     const orig = (g.ow!==undefined && (Math.abs(g.ow-g.fw)>0.01 || Math.abs(g.oh-g.fh)>0.01)) ? ` (orig. ${nf(g.ow)}×${nf(g.oh)})` : '';
-    return `#${compactarNumeros(g.nums)} · ${g.nums.length}× ${truncTxt(g.name,28)} · ${nf(g.fw)}×${nf(g.fh)} mm${g.rot?' ↻':''}${orig}`;
+    const tot = info.totales && info.totales[g.name+'|'+g.fw+'|'+g.fh];
+    return `#${compactarNumeros(g.nums)} · ${g.nums.length}× ${truncTxt(g.name,28)} · ${nf(g.fw)}×${nf(g.fh)} mm${g.rot?' ↻':''}${orig}${tot?` · se ocupan ${tot.total} en total`:''}`;
   });
   const legY = y0 + bh + 40, lh = 15;
   const svgH = legY + 22 + leyenda.length*lh + 50;
@@ -1089,7 +1137,7 @@ function resumenPorMaterial(result){
 function drawPlano(idx){
   const boards = STATE.bestResult?.boards || [];
   const b = boards[idx]; if(!b) return;
-  const out = construirPlanoSVG(b, infoTablero(boards, idx), {
+  const out = construirPlanoSVG(b, infoTablero(boards, idx, STATE.bestResult.unplaced), {
     showCuts: $('chkShowCuts').checked, showDims: $('chkShowDims').checked,
     showVeta: $('chkShowVeta').checked, showLabels: $('chkShowLabels').checked
   });
@@ -1143,7 +1191,7 @@ function hslAArreglo(str){
 }
 
 /** Agrupa las piezas de un tablero para la leyenda (misma pieza y medida = una fila). */
-function agruparLeyenda(placed){
+function agruparLeyenda(placed, totales){
   const g = {};
   placed.forEach((p,i)=>{
     const n = i+1, fw = p.rotated? p.h : p.w, fh = p.rotated? p.w : p.h;
@@ -1152,6 +1200,7 @@ function agruparLeyenda(placed){
   });
   return Object.values(g).map(o=>({
     nums: compactarNumeros(o.nums), name:o.name, cant:o.nums.length,
+    total: (totales && totales[o.name+'|'+o.fw+'|'+o.fh]) ? totales[o.name+'|'+o.fw+'|'+o.fh].total : o.nums.length,
     med: `${nf(o.fw)} x ${nf(o.fh)}`,
     orig: (o.ow!==undefined && (Math.abs(o.ow-o.fw)>0.01 || Math.abs(o.oh-o.fh)>0.01)) ? `${nf(o.ow)} x ${nf(o.oh)}` : '-',
     girada: o.rot ? 'Sí' : ''
@@ -1243,9 +1292,29 @@ function construirPdfOptimizacion(doc, result, ctx){
     doc.setTextColor(15,23,42);
   }
 
+  // ---------- Lista general de cortes (todas las piezas del trabajo) ----------
+  if(boards.length){
+    const tot = Object.values(totalesPorCorte(boards, result.unplaced))
+      .sort((a,b)=> a.material.localeCompare(b.material) || a.espesor-b.espesor || a.name.localeCompare(b.name));
+    doc.addPage('a4','portrait');
+    doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(15,23,42);
+    doc.text('Lista general de cortes (todas las piezas)', 12, 16);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(71,85,105);
+    doc.text('Cantidad total que se ocupa de cada corte, sumando todos los tableros y los muebles de los habilitados incluidos.', 12, 21);
+    doc.autoTable({
+      startY: 25, margin:{left:12,right:12,bottom:14}, theme:'grid',
+      head:[['Material','Esp.','Pieza','Medida final (ancho x largo mm)','Original','Se ocupan','En tableros']],
+      body: tot.map(o=>[o.material, nf(o.espesor), o.name, `${nf(o.fw)} x ${nf(o.fh)}`,
+        (o.ow!==undefined && (Math.abs(o.ow-o.fw)>0.01 || Math.abs(o.oh-o.fh)>0.01)) ? `${nf(o.ow)} x ${nf(o.oh)}` : '-',
+        o.total + (o.sin?` (${o.sin} sin colocar)`:''), compactarNumeros([...o.tableros].filter(n=>n>0).sort((a,b)=>a-b))]),
+      styles:{fontSize:7.5, cellPadding:1.3}, headStyles:{fillColor:[15,23,42]},
+      columnStyles:{1:{cellWidth:10},5:{cellWidth:22}}
+    });
+  }
+
   // ---------- Una página por tablero ----------
   boards.forEach((b,idx)=>{
-    const board = b.board, info = infoTablero(boards, idx);
+    const board = b.board, info = infoTablero(boards, idx, result.unplaced);
     const orient = board.ancho > board.largo ? 'landscape' : 'portrait';
     doc.addPage('a4', orient);
     const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
@@ -1263,8 +1332,8 @@ function construirPdfOptimizacion(doc, result, ctx){
     doc.text(`${piezas.length} piezas | Aprovechamiento ${aprov.toFixed(1)}% | Sobrante ${(100-aprov).toFixed(1)}% (${((W*H-area)/1e6).toFixed(2)} m2) | Veta: ${textoVeta(board.veta)}`, 10, 19);
 
     // Zona de dibujo
-    const leyenda = agruparLeyenda(piezas);
-    const legH = Math.min(12 + leyenda.length*4.6, ph*0.36);
+    const leyenda = agruparLeyenda(piezas, info.totales);
+    const legH = Math.min(20 + leyenda.length*4.8, ph*0.40);
     const x0 = 22, y0 = 36;
     const availW = pw - x0 - 12, availH = ph - y0 - 14 - legH;
     const sc = Math.min(availW/W, availH/H);
@@ -1325,10 +1394,10 @@ function construirPdfOptimizacion(doc, result, ctx){
     // Leyenda (tabla de piezas)
     doc.autoTable({
       startY: y0+bh+7, margin:{left:12,right:12,bottom:12}, theme:'grid',
-      head:[['#','Pieza','Cant.','Medida final (ancho x largo mm)','Medida original','Girada']],
-      body: leyenda.map(r=>[r.nums, r.name, r.cant, r.med, r.orig, r.girada]),
+      head:[['#','Pieza','En este tablero','Se ocupan en total','Medida final (mm)','Original (mm)','Girada']],
+      body: leyenda.map(r=>[r.nums, r.name, r.cant, r.total, r.med, r.orig, r.girada]),
       styles:{fontSize:7, cellPadding:1}, headStyles:{fillColor:[15,23,42]},
-      columnStyles:{0:{cellWidth:22},2:{cellWidth:12},5:{cellWidth:14}}
+      columnStyles:{0:{cellWidth:20},2:{cellWidth:19},3:{cellWidth:21},4:{cellWidth:28},5:{cellWidth:28},6:{cellWidth:13}}
     });
     const fy = doc.lastAutoTable.finalY + 4;
     if(fy < ph-13){
@@ -1351,6 +1420,10 @@ function construirPdfOptimizacion(doc, result, ctx){
 
 $('btnPdfOptim').onclick = ()=>{
   if(!STATE.bestResult){ toast('Ejecuta primero la optimización','error'); return; }
+  if(STATE.ultimasEstrategias && STATE.firmaResultado !== firmaDatos()){
+    calcularResultados(STATE.ultimasEstrategias);
+    toast('Los datos cambiaron: se recalculó con los muebles y piezas actuales','success');
+  }
   if(!window.jspdf){ toast('La librería de PDF no se ha cargado; revisa tu conexión','error'); return; }
   try{
     const doc = new window.jspdf.jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
@@ -1921,6 +1994,7 @@ function renderHabilitados(){
       `Total: <b>${piezasHab}</b> piezas de habilitados` + (manuales?` + <b>${manuales}</b> piezas manuales`:'') + '.'
     : 'Aún no hay habilitados. Importa un Excel en "Importar Excel" y aparecerá aquí.';
   saveAuto();
+  actualizarAvisoResultado();
 }
 $('btnHabTodos').onclick = ()=>{ STATE.habilitados.forEach(h=>h.incluir=true); renderHabilitados(); renderPiezas(); };
 $('btnHabNinguno').onclick = ()=>{ STATE.habilitados.forEach(h=>h.incluir=false); renderHabilitados(); renderPiezas(); };
