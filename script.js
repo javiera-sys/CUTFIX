@@ -975,6 +975,52 @@ function compactarNumeros(nums){
   return out.join(', ');
 }
 
+const nombreTablero = board => String(board.nombre || board.material || '').replace(/\s*\(auto\)\s*$/i,'').trim() || String(board.material||'');
+
+/** Rectángulos libres máximos del tablero dado un conjunto de rectángulos ocupados (incluyen su kerf). */
+function rectsLibres(base, ocupados){
+  const EPS = 0.01;
+  let libres = [{...base}];
+  for(const o of ocupados){
+    const next = [];
+    for(const f of libres){
+      if(o.x >= f.x+f.w-EPS || o.x+o.w <= f.x+EPS || o.y >= f.y+f.h-EPS || o.y+o.h <= f.y+EPS){ next.push(f); continue; }
+      if(o.y > f.y+EPS) next.push({x:f.x, y:f.y, w:f.w, h:o.y-f.y});
+      if(o.y+o.h < f.y+f.h-EPS) next.push({x:f.x, y:o.y+o.h, w:f.w, h:f.y+f.h-(o.y+o.h)});
+      if(o.x > f.x+EPS) next.push({x:f.x, y:f.y, w:o.x-f.x, h:f.h});
+      if(o.x+o.w < f.x+f.w-EPS) next.push({x:o.x+o.w, y:f.y, w:f.x+f.w-(o.x+o.w), h:f.h});
+    }
+    const unicos = [], vistos = new Set();
+    next.forEach(r=>{ const k = [r.x,r.y,r.w,r.h].map(v=>Math.round(v*100)).join('|'); if(!vistos.has(k)){ vistos.add(k); unicos.push(r); } });
+    libres = unicos.filter((a,i)=>!unicos.some((b,j)=> j!==i && b.x<=a.x+EPS && b.y<=a.y+EPS && b.x+b.w>=a.x+a.w-EPS && b.y+b.h>=a.y+a.h-EPS));
+  }
+  return libres.filter(r=>r.w>EPS && r.h>EPS);
+}
+
+/**
+ * Sobrantes aprovechables de un tablero, como si fueran otros tableros: se descuenta el margen del tablero
+ * y el corte de sierra (kerf) alrededor de cada pieza. Devuelve hasta `max` rectángulos disjuntos, del mayor al menor,
+ * {x,y,w,h} con w = medida a lo ancho del tablero y h = medida a lo largo.
+ */
+function calcularSobrantes(board, placed, opts){
+  const m = margenTablero(board), kerf = STATE.params.kerf;
+  const minLado = (opts && opts.minLado) || 100, max = (opts && opts.max) || 3;
+  const base = {x:m, y:m, w:board.ancho-2*m, h:board.largo-2*m};
+  // kerf por TODOS los lados de cada pieza: el sobrante nunca queda pegado a una pieza
+  let ocupados = placed.map(p=>({x:p.x-kerf, y:p.y-kerf, w:p.w+2*kerf, h:p.h+2*kerf}));
+  const out = [];
+  for(let k=0;k<max;k++){
+    let best = null;
+    rectsLibres(base, ocupados).forEach(r=>{
+      if(r.w>=minLado && r.h>=minLado && (!best || r.w*r.h > best.w*best.h)) best = r;
+    });
+    if(!best) break;
+    out.push({x:best.x, y:best.y, w:Math.round(best.w*100)/100, h:Math.round(best.h*100)/100});
+    ocupados = ocupados.concat([{x:best.x-kerf, y:best.y-kerf, w:best.w+2*kerf, h:best.h+2*kerf}]);
+  }
+  return out;
+}
+
 const claveCorte = p => p.name+'|'+(p.rotated? p.h : p.w)+'|'+(p.rotated? p.w : p.h);
 
 /** Total de cada corte (mismo nombre y medida) en todos los tableros, más lo que no se pudo colocar. */
@@ -1075,6 +1121,8 @@ function construirPlanoSVG(b, info, opts){
     const tot = info.totales && info.totales[g.name+'|'+g.fw+'|'+g.fh];
     return `#${compactarNumeros(g.nums)} · ${g.nums.length}× ${truncTxt(g.name,28)} · ${nf(g.fw)}×${nf(g.fh)} mm${g.rot?' ↻':''}${orig}${tot?` · se ocupan ${tot.total} en total`:''}`;
   });
+  const sobrantes = calcularSobrantes(board, placed);
+  sobrantes.forEach((r,i)=> leyenda.push(`S${i+1} · SOBRANTE · ${nf(r.w)}×${nf(r.h)} mm (ancho × largo, ya sin kerf ni margen)`));
   const legY = y0 + bh + 40, lh = 15;
   const svgH = legY + 22 + leyenda.length*lh + 50;
 
@@ -1115,42 +1163,54 @@ function construirPlanoSVG(b, info, opts){
     });
   }
 
-  // Piezas
-  piezas.forEach(p=>{
-    const x = x0+p.x*scale, y = y0+p.y*scale, w = p.w*scale, h = p.h*scale;
-    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${hslColorFromString(p.material+p.name)}" fill-opacity="0.85" stroke="#0f172a" stroke-width="1"/>`;
-    // Veta (flecha en el borde, para no chocar con el texto)
-    if(opts.showVeta && p.veta!=='ninguna' && w>26 && h>26){
-      const vertical = (p.veta==='largo') !== !!p.rotated;
-      s += vertical
-        ? `<line x1="${x+7}" y1="${y+h*0.2}" x2="${x+7}" y2="${y+h*0.8}" stroke="#7c2d12" stroke-width="1.4" marker-end="url(#arr${uid2})"/>`
-        : `<line x1="${x+w*0.2}" y1="${y+h-7}" x2="${x+w*0.8}" y2="${y+h-7}" stroke="#7c2d12" stroke-width="1.4" marker-end="url(#arr${uid2})"/>`;
-    }
-    // Medidas centradas sobre cada lado (ancho arriba, alto a la izquierda); nombre COMPLETO al centro
-    const sw = nf(p.w), sh = nf(p.h);
+  // Medidas centradas sobre cada lado (ancho arriba, alto a la izquierda) + nombre COMPLETO al centro
+  const etiquetas = (x,y,w,h,vw,vh,nombreTxt)=>{
+    let o = '';
+    const sw = nf(vw), sh = nf(vh);
     const fe = Math.max(7, Math.min(12, Math.min(w,h)/9)), pad = fe+3;
     const topOk  = opts.showDims && w >= sw.length*fe*0.6+6 && h >= pad*2+2;
     const leftOk = opts.showDims && h >= sh.length*fe*0.6+6 && w >= pad*2+2;
     const enLados = topOk && leftOk;
     let rx = x, ry = y, rw = w, rh = h;
     if(enLados){
-      s += `<text x="${x+w/2}" y="${y+fe+1}" text-anchor="middle" font-size="${fe.toFixed(1)}" font-weight="600" fill="#0f172a">${sw}</text>`;
-      s += `<text transform="translate(${x+fe+1} ${y+h/2}) rotate(-90)" text-anchor="middle" font-size="${fe.toFixed(1)}" font-weight="600" fill="#0f172a">${sh}</text>`;
+      o += `<text x="${x+w/2}" y="${y+fe+1}" text-anchor="middle" font-size="${fe.toFixed(1)}" font-weight="600" fill="#0f172a">${sw}</text>`;
+      o += `<text transform="translate(${x+fe+1} ${y+h/2}) rotate(-90)" text-anchor="middle" font-size="${fe.toFixed(1)}" font-weight="600" fill="#0f172a">${sh}</text>`;
       rx = x+pad; ry = y+pad; rw = w-pad-2; rh = h-pad-2;   // solo se reserva el lado donde está cada medida
     }
-    const nombreTxt = opts.showLabels ? `#${p.n} ${p.name}` : `#${p.n}`;
     const texto = enLados ? nombreTxt : (opts.showDims ? `${nombreTxt} ${sw}×${sh}` : nombreTxt);
     const anchoPx = (str,fs)=> str.length*fs*0.62;
-    let lay = ajustarNombre(texto, rw-4, rh-3, 12, 5.5, anchoPx, 1) || ajustarNombre(`#${p.n}`, rw-2, rh-2, 12, 5, anchoPx, 1);
+    const numero = nombreTxt.split(' ')[0];
+    const lay = ajustarNombre(texto, rw-4, rh-3, 12, 5.5, anchoPx, 1) || ajustarNombre(numero, rw-2, rh-2, 12, 5, anchoPx, 1);
     if(lay){
       const cx = rx+rw/2, cy = ry+rh/2;
       lay.lines.forEach((t,i)=>{
         const off = (i-(lay.lines.length-1)/2)*lay.lh;
-        s += lay.vertical
+        o += lay.vertical
           ? `<text transform="translate(${cx} ${cy}) rotate(-90)" y="${off}" text-anchor="middle" dominant-baseline="middle" font-size="${lay.fs.toFixed(1)}" font-weight="600" fill="#0f172a">${escSvg(t)}</text>`
           : `<text x="${cx}" y="${cy+off}" text-anchor="middle" dominant-baseline="middle" font-size="${lay.fs.toFixed(1)}" font-weight="600" fill="#0f172a">${escSvg(t)}</text>`;
       });
     }
+    return o;
+  };
+
+  // Sobrantes (como otro tablero: verde punteado)
+  sobrantes.forEach((r,i)=>{
+    const x = x0+r.x*scale, y = y0+r.y*scale, w = r.w*scale, h = r.h*scale;
+    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#bbf7d0" fill-opacity="0.55" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="6 4"/>`;
+    s += etiquetas(x,y,w,h,r.w,r.h,`S${i+1} SOBRANTE`);
+  });
+
+  // Piezas
+  piezas.forEach(p=>{
+    const x = x0+p.x*scale, y = y0+p.y*scale, w = p.w*scale, h = p.h*scale;
+    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${hslColorFromString(p.material+p.name)}" fill-opacity="0.85" stroke="#0f172a" stroke-width="1"/>`;
+    if(opts.showVeta && p.veta!=='ninguna' && w>26 && h>26){
+      const vertical = (p.veta==='largo') !== !!p.rotated;
+      s += vertical
+        ? `<line x1="${x+7}" y1="${y+h*0.2}" x2="${x+7}" y2="${y+h*0.8}" stroke="#7c2d12" stroke-width="1.4" marker-end="url(#arr${uid2})"/>`
+        : `<line x1="${x+w*0.2}" y1="${y+h-7}" x2="${x+w*0.8}" y2="${y+h-7}" stroke="#7c2d12" stroke-width="1.4" marker-end="url(#arr${uid2})"/>`;
+    }
+    s += etiquetas(x,y,w,h,p.w,p.h, opts.showLabels ? `#${p.n} ${p.name}` : `#${p.n}`);
   });
 
   // Leyenda
@@ -1168,10 +1228,11 @@ function construirPlanoSVG(b, info, opts){
 /** Resumen por material + espesor del resultado de una optimización. */
 function resumenPorMaterial(result){
   const g = {};
-  const get = (mat, esp)=> g[mat+'|'+(+esp)] = g[mat+'|'+(+esp)] || {material:mat, espesor:+esp, medidas:new Set(), tableros:0, colocadas:0, sinColocar:0, areaPiezas:0, areaTableros:0};
+  const get = (mat, esp)=> g[mat+'|'+(+esp)] = g[mat+'|'+(+esp)] || {material:mat, espesor:+esp, medidas:new Set(), nombres:new Set(), tableros:0, colocadas:0, sinColocar:0, areaPiezas:0, areaTableros:0};
   result.boards.forEach(b=>{
     const o = get(b.board.material, b.board.espesor);
     o.medidas.add(`${fmt(b.board.ancho)}×${fmt(b.board.largo)}`);
+    o.nombres.add(nombreTablero(b.board));
     o.tableros++; o.colocadas += b.placed.length;
     o.areaPiezas += b.placed.reduce((s,p)=>s+p.w*p.h,0);
     o.areaTableros += b.board.ancho*b.board.largo;
@@ -1179,6 +1240,7 @@ function resumenPorMaterial(result){
   result.unplaced.forEach(p=>{ get(p.material, p.espesor).sinColocar++; });
   return Object.values(g).map(o=>({
     ...o, medidas: o.medidas.size ? [...o.medidas].join(' · ') : '—',
+    nombres: o.nombres.size ? [...o.nombres].join(', ') : '—',
     requeridas: o.colocadas + o.sinColocar,
     aprov: o.areaTableros ? o.areaPiezas/o.areaTableros*100 : 0,
     desperdicioMm2: o.areaTableros - o.areaPiezas,
@@ -1205,20 +1267,20 @@ function renderResumen(result){
   const kerf = STATE.params.kerf;
   const th = $('resumenMateriales').querySelector('thead');
   const tb = $('resumenMateriales').querySelector('tbody');
-  th.innerHTML = '<tr><th>Material</th><th>Espesor (mm)</th><th>Tablero (ancho×largo mm)</th><th>Piezas requeridas</th><th>Colocadas</th><th>Tableros usados</th><th>Kerf (mm)</th><th>Aprovechamiento</th><th>Desperdicio estimado</th></tr>';
+  th.innerHTML = '<tr><th>Material</th><th>Tablero (nombre)</th><th>Espesor (mm)</th><th>Tablero (ancho×largo mm)</th><th>Piezas requeridas</th><th>Colocadas</th><th>Tableros usados</th><th>Kerf (mm)</th><th>Aprovechamiento</th><th>Desperdicio estimado</th></tr>';
   tb.innerHTML = '';
   let t = {req:0,col:0,tab:0,ap:0,at:0};
   rows.forEach(r=>{
     t.req+=r.requeridas; t.col+=r.colocadas; t.tab+=r.tableros; t.ap+=r.areaPiezas; t.at+=r.areaTableros;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${escapeHtml(r.material)}</td><td>${nf(r.espesor)}</td><td>${r.medidas}</td><td>${r.requeridas}</td>`+
+    tr.innerHTML = `<td>${escapeHtml(r.material)}</td><td>${escapeHtml(r.nombres)}</td><td>${nf(r.espesor)}</td><td>${r.medidas}</td><td>${r.requeridas}</td>`+
       `<td>${r.colocadas}${r.sinColocar?` <span style="color:#dc2626">(${r.sinColocar} sin colocar)</span>`:''}</td><td>${r.tableros}</td><td>${kerf}</td>`+
       `<td>${r.aprov.toFixed(1)}%</td><td>${fmt(r.desperdicioMm2/1e6,2)} m² (${r.desperdicioPct.toFixed(1)}%)</td>`;
     tb.appendChild(tr);
   });
   const tr = document.createElement('tr');
   tr.style.fontWeight = '700';
-  tr.innerHTML = `<td colspan="3">TOTAL</td><td>${t.req}</td><td>${t.col}</td><td>${t.tab}</td><td>${kerf}</td>`+
+  tr.innerHTML = `<td colspan="4">TOTAL</td><td>${t.req}</td><td>${t.col}</td><td>${t.tab}</td><td>${kerf}</td>`+
     `<td>${t.at?(t.ap/t.at*100).toFixed(1):'0.0'}%</td><td>${fmt((t.at-t.ap)/1e6,2)} m² (${t.at?((t.at-t.ap)/t.at*100).toFixed(1):'0.0'}%)</td>`;
   tb.appendChild(tr);
   $('resumenCard').style.display = rows.length ? 'block' : 'none';
@@ -1240,6 +1302,25 @@ function hslAArreglo(str){
   const q = l<0.5 ? l*(1+s) : l+s-l*s, p = 2*l-q;
   const f = t=>{ t=(t+1)%1; return t<1/6? p+(q-p)*6*t : t<1/2? q : t<2/3? p+(q-p)*(2/3-t)*6 : p; };
   return [f(h+1/3),f(h),f(h-1/3)].map(v=>Math.round(v*255));
+}
+
+const nf2 = n => { const v = +n; return Number.isInteger(v) ? String(v) : String(Math.round(v*100)/100); };
+
+/** Resumen por material con el desglose por habilitado (piezas por mueble, muebles y piezas a cortar). */
+function resumenDetallado(result){
+  return resumenPorMaterial(result).map(r=>{
+    const porHab = {};
+    STATE.piezas.filter(p=>p.material===r.material && +p.espesor===r.espesor).forEach(p=>{
+      const h = habilitadoDe(p);
+      if(p.habId && !(h && h.incluir)) return;
+      const tot = cantidadTotal(p); if(tot<=0) return;
+      const k = h ? h.id : 'manual';
+      const o = porHab[k] = porHab[k] || {hab: h ? h.nombre : 'Piezas manuales', muebles: h ? h.muebles : null, porMueble: h ? 0 : null, total:0};
+      if(h) o.porMueble += p.cantidad;
+      o.total += tot;
+    });
+    return {...r, filasHab: Object.values(porHab)};
+  });
 }
 
 /** Agrupa las piezas de un tablero para la leyenda (misma pieza y medida = una fila). */
@@ -1296,51 +1377,76 @@ function construirPdfOptimizacion(doc, result, ctx){
   const totCol = resumen.reduce((n,r)=>n+r.colocadas,0);
   const aP = resumen.reduce((n,r)=>n+r.areaPiezas,0), aT = resumen.reduce((n,r)=>n+r.areaTableros,0);
 
-  // ---------- Página 1: resumen general ----------
+  // ---------- Página 1: resumen general (hoja horizontal) ----------
+  const pw1 = doc.internal.pageSize.getWidth();
   doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(15,23,42);
   doc.text('OPTIMIZACIÓN DE CORTE DE TABLEROS', 12, 16);
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(51,65,85);
-  doc.text(`Fecha de generación: ${ctx.fecha}`, 12, 23);
-  doc.text(`Proyecto: ${ctx.proyecto}`, 12, 28);
-  doc.text(`Corte de sierra (kerf): ${kerf} mm   |   Margen perimetral: ${nf(P.margenPer + P.margenSeg)} mm   |   Método: ${ctx.modo}`, 12, 33);
-  doc.text(`Piezas: ${totCol} de ${totReq} colocadas   |   Tableros necesarios: ${totTab}   |   Aprovechamiento global: ${aT? (aP/aT*100).toFixed(1):'0.0'}%`, 12, 38);
-
-  let yTab = 47;
+  doc.text(`Fecha de generación: ${ctx.fecha}   |   Proyecto: ${ctx.proyecto}   |   Método: ${ctx.modo}`, 12, 23);
+  doc.text(`Corte de sierra (kerf): ${kerf} mm   |   Margen perimetral: ${nf(P.margenPer + P.margenSeg)} mm`, 12, 28);
+  doc.text(`Piezas: ${totCol} de ${totReq} colocadas   |   Tableros necesarios: ${totTab}   |   Aprovechamiento global: ${aT? (aP/aT*100).toFixed(1):'0.0'}%`, 12, 33);
+  let yTab = 40;
   const habInc = (STATE.habilitados||[]).filter(h=>h.incluir && h.muebles>0);
   if(habInc.length){
-    const txt = doc.splitTextToSize('Habilitados incluidos: ' + habInc.map(h=>`${h.nombre} (${h.muebles} mueble${h.muebles>1?'s':''})`).join('; '), 186);
-    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(51,65,85);
-    doc.text(txt, 12, 43);
-    yTab = 43 + txt.length*4.2 + 6;
+    const txt = doc.splitTextToSize('Habilitados incluidos: ' + habInc.map(h=>`${h.nombre} (${h.muebles} mueble${h.muebles>1?'s':''})`).join('; '), pw1-24);
+    doc.setFont('helvetica','bold'); doc.setTextColor(30,64,175);
+    doc.text(txt, 12, 38);
+    yTab = 38 + txt.length*4.2 + 4;
+    doc.setTextColor(15,23,42);
   }
   doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(15,23,42);
-  doc.text('Resumen de materiales y cantidades', 12, yTab);
-  const body = resumen.map(r=>[r.material, nf(r.espesor), r.medidas.replace(/,/g,''), r.requeridas, r.colocadas+(r.sinColocar?` (${r.sinColocar} sin colocar)`:''), r.tableros, kerf, r.aprov.toFixed(1)+'%', `${(r.desperdicioMm2/1e6).toFixed(2)} m2 (${r.desperdicioPct.toFixed(1)}%)`]);
-  body.push(['TOTAL','','',totReq,totCol,totTab,kerf,(aT?(aP/aT*100).toFixed(1):'0.0')+'%',`${((aT-aP)/1e6).toFixed(2)} m2 (${aT?((aT-aP)/aT*100).toFixed(1):'0.0'}%)`]);
-  doc.autoTable({
-    startY: yTab+3, margin:{left:12,right:12}, theme:'grid',
-    head:[['Material','Espesor (mm)','Tablero (mm)','Piezas req.','Colocadas','Tableros','Kerf (mm)','Aprovech.','Desperdicio']],
-    body, styles:{fontSize:8, cellPadding:1.6}, headStyles:{fillColor:[15,23,42]},
-    didParseCell: d=>{ if(d.section==='body' && d.row.index===body.length-1){ d.cell.styles.fontStyle='bold'; d.cell.styles.fillColor=[226,232,240]; } }
-  });
+  doc.text('Resumen por material: piezas por mueble, piezas a cortar y tableros necesarios', 12, yTab);
 
-  let y = doc.lastAutoTable.finalY + 10;
-  doc.setFont('helvetica','bold'); doc.setFontSize(11);
-  doc.text('Cantidad total de tableros necesarios por material', 12, y);
-  doc.autoTable({
-    startY: y+3, margin:{left:12,right:12}, theme:'striped',
-    head:[['Material','Espesor (mm)','Medida del tablero (mm)','Tableros necesarios']],
-    body: resumen.map(r=>[r.material, nf(r.espesor), r.medidas.replace(/,/g,''), r.tableros]).concat([['TOTAL','','',totTab]]),
-    styles:{fontSize:9, cellPadding:1.8}, headStyles:{fillColor:[37,99,235]},
-    didParseCell: d=>{ if(d.section==='body' && d.row.index===resumen.length){ d.cell.styles.fontStyle='bold'; } }
+  const det = resumenDetallado(result);
+  const body = [], grupoDeFila = [];
+  det.forEach((r,gi)=>{
+    const filas = r.filasHab.length ? r.filasHab : [{hab:'-', porMueble:null, muebles:null, total:r.requeridas}];
+    filas.forEach((f,fi)=>{
+      const celdasHab = [f.hab, f.porMueble==null ? '-' : nf2(f.porMueble), f.muebles==null ? '-' : f.muebles, f.total];
+      if(fi===0){
+        const sp = filas.length;
+        body.push([
+          {content:r.material, rowSpan:sp, styles:{fontStyle:'bold'}},
+          {content:r.nombres, rowSpan:sp},
+          {content:nf(r.espesor), rowSpan:sp},
+          {content:r.medidas.replace(/,/g,''), rowSpan:sp},
+          ...celdasHab,
+          {content:String(r.requeridas) + (r.sinColocar ? ` (${r.sinColocar} sin colocar)` : ''), rowSpan:sp, styles:{fontStyle:'bold'}},
+          {content:String(r.tableros), rowSpan:sp, styles:{fontStyle:'bold', fontSize:11, textColor:[30,64,175]}},
+          {content:r.aprov.toFixed(1)+'%', rowSpan:sp, styles:{fontStyle:'bold'}},
+          {content:`${(r.desperdicioMm2/1e6).toFixed(2)} m2 (${r.desperdicioPct.toFixed(1)}%)`, rowSpan:sp}
+        ]);
+      } else body.push(celdasHab);
+      grupoDeFila.push(gi);
+    });
   });
+  body.push([{content:'TOTAL', colSpan:8, styles:{halign:'right'}}, String(totReq), String(totTab), (aT?(aP/aT*100).toFixed(1):'0.0')+'%', `${((aT-aP)/1e6).toFixed(2)} m2 (${aT?((aT-aP)/aT*100).toFixed(1):'0.0'}%)`]);
+  doc.autoTable({
+    startY: yTab+3, margin:{left:12,right:12,bottom:14}, theme:'grid',
+    head:[['Material','Tablero (nombre)','Esp. (mm)','Medida tablero (mm)','Habilitado','Piezas por mueble','Muebles','Piezas a cortar','Total piezas del material','Tableros necesarios','Aprov.','Desperdicio']],
+    body, styles:{fontSize:8.5, cellPadding:1.8, valign:'middle'},
+    headStyles:{fillColor:[15,23,42], halign:'center', valign:'middle'},
+    columnStyles:{0:{cellWidth:38},1:{cellWidth:32},2:{cellWidth:12,halign:'center'},3:{cellWidth:20,halign:'center'},4:{cellWidth:28},
+                  5:{cellWidth:17,halign:'center'},6:{cellWidth:18,halign:'center'},7:{cellWidth:17,halign:'center'},
+                  8:{cellWidth:21,halign:'center'},9:{cellWidth:23,halign:'center'},10:{cellWidth:18,halign:'center'}},
+    didParseCell: d=>{
+      if(d.section!=='body') return;
+      if(d.row.index === body.length-1){ d.cell.styles.fontStyle='bold'; d.cell.styles.fillColor=[203,213,225]; return; }
+      d.cell.styles.fillColor = (grupoDeFila[d.row.index]%2) ? [241,245,249] : [255,255,255];
+    }
+  });
+  let yy = doc.lastAutoTable.finalY + 7;
+  doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(30,64,175);
+  const lineaTab = doc.splitTextToSize(`Tableros necesarios: ${totTab} en total — ` + det.map(r=>`${r.material}: ${r.tableros}`).join(' · '), pw1-24);
+  doc.text(lineaTab, 12, yy);
+  yy += lineaTab.length*4.2 + 3;
+  doc.setTextColor(15,23,42);
   if(result.unplaced.length){
-    y = doc.lastAutoTable.finalY + 8;
     doc.setFontSize(10); doc.setTextColor(220,38,38);
-    doc.text(`ATENCIÓN: ${result.unplaced.length} pieza(s) no se pudieron colocar`, 12, y);
+    doc.text(`ATENCIÓN: ${result.unplaced.length} pieza(s) no se pudieron colocar`, 12, yy);
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
-    const lst = result.unplaced.slice(0,12).map(p=>`- ${p.name} (${nf(p.w)} x ${nf(p.h)} mm, ${p.material}): ${p.reason||'sin tablero disponible'}`);
-    doc.text(lst, 12, y+5);
+    const lst = result.unplaced.slice(0,10).map(p=>`- ${p.name} (${nf(p.w)} x ${nf(p.h)} mm, ${p.material}): ${p.reason||'sin tablero disponible'}`);
+    doc.text(lst, 12, yy+5);
     doc.setTextColor(15,23,42);
   }
 
@@ -1348,7 +1454,7 @@ function construirPdfOptimizacion(doc, result, ctx){
   if(boards.length){
     const tot = Object.values(totalesPorCorte(boards, result.unplaced))
       .sort((a,b)=> a.material.localeCompare(b.material) || a.espesor-b.espesor || a.name.localeCompare(b.name));
-    doc.addPage('a4','portrait');
+    doc.addPage('a4','landscape');
     doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(15,23,42);
     doc.text('Lista general de cortes (todas las piezas)', 12, 16);
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(71,85,105);
@@ -1387,6 +1493,8 @@ function construirPdfOptimizacion(doc, result, ctx){
 
     // Leyenda en 1, 2 o 3 columnas según cuántos cortes distintos haya
     const leyenda = agruparLeyenda(piezas, info.totales);
+    const sobrantes = calcularSobrantes(board, b.placed);
+    sobrantes.forEach((r,i)=> leyenda.push({nums:`S${i+1}`, name:'SOBRANTE', cant:'-', total:'-', med:`${nf(r.w)} x ${nf(r.h)}`}));
     const ncol = leyenda.length<=5 ? 1 : leyenda.length<=10 ? 2 : 3;
     const porCol = Math.ceil(leyenda.length/ncol);
     const legH = 15 + porCol*5.4;
@@ -1422,13 +1530,9 @@ function construirPdfOptimizacion(doc, result, ctx){
       });
     });
 
-    // Piezas
-    doc.setLineWidth(0.2); doc.setDrawColor(15,23,42);
-    piezas.forEach(p=>{
-      const r = T(p.x, p.y, p.w, p.h);
-      doc.setFillColor(...hslAArreglo(hslColorFromString(p.material+p.name)));
-      doc.rect(r.x, r.y, r.w, r.h, 'FD');
-      const sw = nf(R ? p.h : p.w), sh = nf(R ? p.w : p.h);   // medida del lado horizontal / vertical en la hoja
+    // Medidas sobre cada lado + nombre COMPLETO al centro (se usa en piezas y en sobrantes)
+    const etiquetasPdf = (r, vw, vh, nombreTxt)=>{
+      const sw = nf(vw), sh = nf(vh);
       const fe = Math.max(5, Math.min(9, Math.min(r.w,r.h)/5)), th = fe*0.3528, pad = th+1.8;
       doc.setFont('helvetica','bold'); doc.setFontSize(fe); doc.setTextColor(15,23,42);
       const topOk  = doc.getTextWidth(sw)+2 <= r.w && r.h >= pad*2+2;
@@ -1440,10 +1544,9 @@ function construirPdfOptimizacion(doc, result, ctx){
         doc.text(sh, r.x+th+1.2, r.y+r.h/2+doc.getTextWidth(sh)/2, {angle:90});
         rx = r.x+pad; ry = r.y+pad; rw = r.w-pad-1; rh = r.h-pad-1;   // solo se reserva el lado donde está cada medida
       }
-      const nombreTxt = `#${p.n} ${p.name}`;
       const texto = enLados ? nombreTxt : `${nombreTxt} ${sw}x${sh}`;
       const anchoPdf = (str,fs)=>{ doc.setFont('helvetica','bold'); doc.setFontSize(fs); return doc.getTextWidth(str); };
-      const lay = ajustarNombre(texto, rw-1.2, rh-1, 8, 3.5, anchoPdf, 0.3528) || ajustarNombre(`#${p.n}`, rw-0.8, rh-0.8, 8, 3, anchoPdf, 0.3528);
+      const lay = ajustarNombre(texto, rw-1.2, rh-1, 8, 3.5, anchoPdf, 0.3528) || ajustarNombre(nombreTxt.split(' ')[0], rw-0.8, rh-0.8, 8, 3, anchoPdf, 0.3528);
       if(lay){
         doc.setFont('helvetica','bold'); doc.setFontSize(lay.fs); doc.setTextColor(15,23,42);
         const cx = rx+rw/2, cy = ry+rh/2;
@@ -1453,6 +1556,23 @@ function construirPdfOptimizacion(doc, result, ctx){
           else doc.text(t, cx, cy+off+lay.lh*0.3, {align:'center'});
         });
       }
+    };
+
+    // Sobrantes (como otro tablero: verde punteado)
+    sobrantes.forEach((sb,i)=>{
+      const r = T(sb.x, sb.y, sb.w, sb.h);
+      doc.setFillColor(220,252,231); doc.setDrawColor(22,163,74); doc.setLineWidth(0.4); doc.setLineDashPattern([2,1.2],0);
+      doc.rect(r.x, r.y, r.w, r.h, 'FD'); doc.setLineDashPattern([],0);
+      etiquetasPdf(r, R ? sb.h : sb.w, R ? sb.w : sb.h, `S${i+1} SOBRANTE`);
+    });
+
+    // Piezas
+    doc.setLineWidth(0.2); doc.setDrawColor(15,23,42);
+    piezas.forEach(p=>{
+      const r = T(p.x, p.y, p.w, p.h);
+      doc.setFillColor(...hslAArreglo(hslColorFromString(p.material+p.name)));
+      doc.rect(r.x, r.y, r.w, r.h, 'FD');
+      etiquetasPdf(r, R ? p.h : p.w, R ? p.w : p.h, `#${p.n} ${p.name}`);
     });
 
     // Leyenda (tabla de cortes) en columnas
@@ -1470,7 +1590,7 @@ function construirPdfOptimizacion(doc, result, ctx){
       });
     }
     doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(71,85,105);
-    doc.text('Aquí = piezas de ese corte en este tablero. Se ocupan = total de ese corte en todo el trabajo. Franja roja = separación de sierra (' + kerf + ' mm). Línea punteada = margen.', 12, ph-10.5);
+    doc.text('Aquí = piezas de ese corte en este tablero. Se ocupan = total de ese corte en todo el trabajo. Franja roja = separación de sierra (' + kerf + ' mm). S1, S2… = sobrantes (verde, medida ya sin kerf ni margen: ancho x largo).', 12, ph-10.5);
   });
 
   // Pie de página
@@ -1493,7 +1613,7 @@ $('btnPdfOptim').onclick = ()=>{
   }
   if(!window.jspdf){ toast('La librería de PDF no se ha cargado; revisa tu conexión','error'); return; }
   try{
-    const doc = new window.jspdf.jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
+    const doc = new window.jspdf.jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
     const ahora = new Date();
     const r = STATE.bestResult;
     construirPdfOptimizacion(doc, r, {
