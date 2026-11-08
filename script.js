@@ -977,48 +977,60 @@ function compactarNumeros(nums){
 
 const nombreTablero = board => String(board.nombre || board.material || '').replace(/\s*\(auto\)\s*$/i,'').trim() || String(board.material||'');
 
+/** Resta un rectángulo ocupado `o` de una lista de rectángulos libres (quedan los libres máximos). */
+function restarRect(libres, o){
+  const EPS = 0.01, next = [];
+  for(const f of libres){
+    if(o.x >= f.x+f.w-EPS || o.x+o.w <= f.x+EPS || o.y >= f.y+f.h-EPS || o.y+o.h <= f.y+EPS){ next.push(f); continue; }
+    if(o.y > f.y+EPS) next.push({x:f.x, y:f.y, w:f.w, h:o.y-f.y});
+    if(o.y+o.h < f.y+f.h-EPS) next.push({x:f.x, y:o.y+o.h, w:f.w, h:f.y+f.h-(o.y+o.h)});
+    if(o.x > f.x+EPS) next.push({x:f.x, y:f.y, w:o.x-f.x, h:f.h});
+    if(o.x+o.w < f.x+f.w-EPS) next.push({x:o.x+o.w, y:f.y, w:f.x+f.w-(o.x+o.w), h:f.h});
+  }
+  const unicos = [], vistos = new Set();
+  next.forEach(r=>{ const k = [r.x,r.y,r.w,r.h].map(v=>Math.round(v*100)).join('|'); if(!vistos.has(k)){ vistos.add(k); unicos.push(r); } });
+  return unicos.filter((a,i)=>!unicos.some((b,j)=> j!==i && b.x<=a.x+EPS && b.y<=a.y+EPS && b.x+b.w>=a.x+a.w-EPS && b.y+b.h>=a.y+a.h-EPS) && a.w>EPS && a.h>EPS);
+}
+
 /** Rectángulos libres máximos del tablero dado un conjunto de rectángulos ocupados (incluyen su kerf). */
 function rectsLibres(base, ocupados){
-  const EPS = 0.01;
   let libres = [{...base}];
-  for(const o of ocupados){
-    const next = [];
-    for(const f of libres){
-      if(o.x >= f.x+f.w-EPS || o.x+o.w <= f.x+EPS || o.y >= f.y+f.h-EPS || o.y+o.h <= f.y+EPS){ next.push(f); continue; }
-      if(o.y > f.y+EPS) next.push({x:f.x, y:f.y, w:f.w, h:o.y-f.y});
-      if(o.y+o.h < f.y+f.h-EPS) next.push({x:f.x, y:o.y+o.h, w:f.w, h:f.y+f.h-(o.y+o.h)});
-      if(o.x > f.x+EPS) next.push({x:f.x, y:f.y, w:o.x-f.x, h:f.h});
-      if(o.x+o.w < f.x+f.w-EPS) next.push({x:o.x+o.w, y:f.y, w:f.x+f.w-(o.x+o.w), h:f.h});
-    }
-    const unicos = [], vistos = new Set();
-    next.forEach(r=>{ const k = [r.x,r.y,r.w,r.h].map(v=>Math.round(v*100)).join('|'); if(!vistos.has(k)){ vistos.add(k); unicos.push(r); } });
-    libres = unicos.filter((a,i)=>!unicos.some((b,j)=> j!==i && b.x<=a.x+EPS && b.y<=a.y+EPS && b.x+b.w>=a.x+a.w-EPS && b.y+b.h>=a.y+a.h-EPS));
-  }
-  return libres.filter(r=>r.w>EPS && r.h>EPS);
+  for(const o of ocupados) libres = restarRect(libres, o);
+  return libres;
 }
 
 /**
- * Sobrantes aprovechables de un tablero, como si fueran otros tableros: se descuenta el margen del tablero
- * y el corte de sierra (kerf) alrededor de cada pieza. Devuelve hasta `max` rectángulos disjuntos, del mayor al menor,
- * {x,y,w,h} con w = medida a lo ancho del tablero y h = medida a lo largo.
+ * Sobrantes de un tablero, como si fueran otros tableros: se descuenta el margen del tablero y el corte de
+ * sierra (kerf) alrededor de cada pieza. Se toma siempre el rectángulo libre más grande, luego el siguiente
+ * (sin traslaparse, separados por un kerf) hasta cubrir todo el espacio libre mayor a `minLado` mm por lado.
+ * Devuelve {x,y,w,h}: w = medida a lo ancho del tablero, h = medida a lo largo.
  */
 function calcularSobrantes(board, placed, opts){
   const m = margenTablero(board), kerf = STATE.params.kerf;
-  const minLado = (opts && opts.minLado) || 100, max = (opts && opts.max) || 3;
+  const minLado = (opts && opts.minLado) || 15, max = (opts && opts.max) || 12;
   const base = {x:m, y:m, w:board.ancho-2*m, h:board.largo-2*m};
-  // kerf por TODOS los lados de cada pieza: el sobrante nunca queda pegado a una pieza
-  let ocupados = placed.map(p=>({x:p.x-kerf, y:p.y-kerf, w:p.w+2*kerf, h:p.h+2*kerf}));
+  let libres = rectsLibres(base, placed.map(p=>({x:p.x-kerf, y:p.y-kerf, w:p.w+2*kerf, h:p.h+2*kerf})));
   const out = [];
-  for(let k=0;k<max;k++){
+  while(out.length < max){
     let best = null;
-    rectsLibres(base, ocupados).forEach(r=>{
-      if(r.w>=minLado && r.h>=minLado && (!best || r.w*r.h > best.w*best.h)) best = r;
-    });
+    libres.forEach(r=>{ if(r.w>=minLado && r.h>=minLado && (!best || r.w*r.h > best.w*best.h)) best = r; });
     if(!best) break;
     out.push({x:best.x, y:best.y, w:Math.round(best.w*100)/100, h:Math.round(best.h*100)/100});
-    ocupados = ocupados.concat([{x:best.x-kerf, y:best.y-kerf, w:best.w+2*kerf, h:best.h+2*kerf}]);
+    libres = restarRect(libres, {x:best.x-kerf, y:best.y-kerf, w:best.w+2*kerf, h:best.h+2*kerf});
   }
   return out;
+}
+
+/** Texto compacto con las medidas de todos los sobrantes, partido en renglones de hasta `maxChars` caracteres. */
+function lineasSobrantes(sob, maxChars, separador){
+  if(!sob.length) return [];
+  const sep = separador || '×';
+  const toks = sob.map((r,i)=>`S${i+1} ${nf(r.w)}${sep}${nf(r.h)}`);
+  const lines = [];
+  let cur = '';
+  toks.forEach(t=>{ const n = cur ? cur+'  ·  '+t : t; if(cur && n.length>maxChars){ lines.push(cur); cur = t; } else cur = n; });
+  if(cur) lines.push(cur);
+  return lines;
 }
 
 const claveCorte = p => p.name+'|'+(p.rotated? p.h : p.w)+'|'+(p.rotated? p.w : p.h);
@@ -1122,7 +1134,7 @@ function construirPlanoSVG(b, info, opts){
     return `#${compactarNumeros(g.nums)} · ${g.nums.length}× ${truncTxt(g.name,28)} · ${nf(g.fw)}×${nf(g.fh)} mm${g.rot?' ↻':''}${orig}${tot?` · se ocupan ${tot.total} en total`:''}`;
   });
   const sobrantes = calcularSobrantes(board, placed);
-  sobrantes.forEach((r,i)=> leyenda.push(`S${i+1} · SOBRANTE · ${nf(r.w)}×${nf(r.h)} mm (ancho × largo, ya sin kerf ni margen)`));
+  if(sobrantes.length){ leyenda.push('SOBRANTES (ancho × largo, mm; ya sin kerf ni margen):'); lineasSobrantes(sobrantes, 80).forEach(t=>leyenda.push(t)); }
   const legY = y0 + bh + 40, lh = 15;
   const svgH = legY + 22 + leyenda.length*lh + 50;
 
@@ -1220,7 +1232,7 @@ function construirPlanoSVG(b, info, opts){
   // Esquema ampliado del kerf
   const ky = legY + 24 + leyenda.length*lh + 6;
   s += `<rect x="${left-30}" y="${ky-9}" width="28" height="12" fill="#cbd5e1" stroke="#0f172a"/><rect x="${left-2}" y="${ky-9}" width="6" height="12" fill="#ef4444" fill-opacity="0.6"/><rect x="${left+4}" y="${ky-9}" width="28" height="12" fill="#cbd5e1" stroke="#0f172a"/>`;
-  s += `<text x="${left+42}" y="${ky}" font-size="11.5" fill="#334155">Separación de sierra entre piezas: ${kerf} mm (esquema ampliado). Zona rayada = sobrante.</text>`;
+  s += `<text x="${left+42}" y="${ky}" font-size="11.5" fill="#334155">Separación de sierra entre piezas: ${kerf} mm (esquema ampliado). Verde punteado = sobrante (S1, S2…).</text>`;
   s += `</svg>`;
   return { svg: s, width: svgW, height: svgH };
 }
@@ -1228,19 +1240,19 @@ function construirPlanoSVG(b, info, opts){
 /** Resumen por material + espesor del resultado de una optimización. */
 function resumenPorMaterial(result){
   const g = {};
-  const get = (mat, esp)=> g[mat+'|'+(+esp)] = g[mat+'|'+(+esp)] || {material:mat, espesor:+esp, medidas:new Set(), nombres:new Set(), tableros:0, colocadas:0, sinColocar:0, areaPiezas:0, areaTableros:0};
+  const get = (mat, esp)=> g[mat+'|'+(+esp)] = g[mat+'|'+(+esp)] || {material:mat, espesor:+esp, medidas:new Set(), cortes:{}, tableros:0, colocadas:0, sinColocar:0, areaPiezas:0, areaTableros:0};
   result.boards.forEach(b=>{
     const o = get(b.board.material, b.board.espesor);
     o.medidas.add(`${fmt(b.board.ancho)}×${fmt(b.board.largo)}`);
-    o.nombres.add(nombreTablero(b.board));
+    b.placed.forEach(p=>{ o.cortes[p.name] = (o.cortes[p.name]||0)+1; });
     o.tableros++; o.colocadas += b.placed.length;
     o.areaPiezas += b.placed.reduce((s,p)=>s+p.w*p.h,0);
     o.areaTableros += b.board.ancho*b.board.largo;
   });
-  result.unplaced.forEach(p=>{ get(p.material, p.espesor).sinColocar++; });
+  result.unplaced.forEach(p=>{ const o = get(p.material, p.espesor); o.sinColocar++; o.cortes[p.name] = (o.cortes[p.name]||0)+1; });
   return Object.values(g).map(o=>({
     ...o, medidas: o.medidas.size ? [...o.medidas].join(' · ') : '—',
-    nombres: o.nombres.size ? [...o.nombres].join(', ') : '—',
+    nombres: Object.entries(o.cortes).sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0])).map(e=>e[0]).join(', ') || '—',
     requeridas: o.colocadas + o.sinColocar,
     aprov: o.areaTableros ? o.areaPiezas/o.areaTableros*100 : 0,
     desperdicioMm2: o.areaTableros - o.areaPiezas,
@@ -1426,9 +1438,9 @@ function construirPdfOptimizacion(doc, result, ctx){
     head:[['Material','Tablero (nombre)','Esp. (mm)','Medida tablero (mm)','Habilitado','Piezas por mueble','Muebles','Piezas a cortar','Total piezas del material','Tableros necesarios','Aprov.','Desperdicio']],
     body, styles:{fontSize:8.5, cellPadding:1.8, valign:'middle'},
     headStyles:{fillColor:[15,23,42], halign:'center', valign:'middle'},
-    columnStyles:{0:{cellWidth:38},1:{cellWidth:32},2:{cellWidth:12,halign:'center'},3:{cellWidth:20,halign:'center'},4:{cellWidth:28},
-                  5:{cellWidth:17,halign:'center'},6:{cellWidth:18,halign:'center'},7:{cellWidth:17,halign:'center'},
-                  8:{cellWidth:21,halign:'center'},9:{cellWidth:23,halign:'center'},10:{cellWidth:18,halign:'center'}},
+    columnStyles:{0:{cellWidth:36},1:{cellWidth:42},2:{cellWidth:11,halign:'center'},3:{cellWidth:22,halign:'center'},4:{cellWidth:26},
+                  5:{cellWidth:15,halign:'center'},6:{cellWidth:17,halign:'center'},7:{cellWidth:16,halign:'center'},
+                  8:{cellWidth:19,halign:'center'},9:{cellWidth:21,halign:'center'},10:{cellWidth:16,halign:'center'}},
     didParseCell: d=>{
       if(d.section!=='body') return;
       if(d.row.index === body.length-1){ d.cell.styles.fontStyle='bold'; d.cell.styles.fillColor=[203,213,225]; return; }
@@ -1494,14 +1506,16 @@ function construirPdfOptimizacion(doc, result, ctx){
     // Leyenda en 1, 2 o 3 columnas según cuántos cortes distintos haya
     const leyenda = agruparLeyenda(piezas, info.totales);
     const sobrantes = calcularSobrantes(board, b.placed);
-    sobrantes.forEach((r,i)=> leyenda.push({nums:`S${i+1}`, name:'SOBRANTE', cant:'-', total:'-', med:`${nf(r.w)} x ${nf(r.h)}`}));
     const ncol = leyenda.length<=5 ? 1 : leyenda.length<=10 ? 2 : 3;
     const porCol = Math.ceil(leyenda.length/ncol);
     const legH = 15 + porCol*5.4;
+    doc.setFont('helvetica','bold'); doc.setFontSize(7);
+    const sobTxt = sobrantes.length ? doc.splitTextToSize('SOBRANTES (ancho x largo, mm; ya sin kerf ni margen):   ' + lineasSobrantes(sobrantes, 400, ' x ').join('  ·  '), pw-24) : [];
+    const sobH = sobTxt.length ? sobTxt.length*3.1 + 3 : 0;
 
     // Zona de dibujo (el tablero ocupa el ancho de la hoja)
     const x0 = 26, y0 = 40;
-    const availW = pw - x0 - 12, availH = ph - y0 - 24 - legH;
+    const availW = pw - x0 - 12, availH = ph - y0 - 24 - legH - sobH;
     const BW = R ? H : W, BH = R ? W : H;               // tamaño visible del tablero en la hoja
     const sc = Math.min(availW/BW, availH/BH);
     const bw = BW*sc, bh = BH*sc, bx = x0 + (availW-bw)/2, by = y0;
@@ -1575,6 +1589,9 @@ function construirPdfOptimizacion(doc, result, ctx){
       etiquetasPdf(r, R ? p.h : p.w, R ? p.w : p.h, `#${p.n} ${p.name}`);
     });
 
+    // Medidas de todos los sobrantes (renglón compacto)
+    if(sobTxt.length){ doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(22,101,52); doc.text(sobTxt, 12, by+bh+6.5); doc.setTextColor(15,23,42); }
+
     // Leyenda (tabla de cortes) en columnas
     const gap = 4, colW = ncol===1 ? Math.min(170, pw-24) : (pw-24-(ncol-1)*gap)/ncol;
     for(let c=0;c<ncol;c++){
@@ -1582,7 +1599,7 @@ function construirPdfOptimizacion(doc, result, ctx){
       if(!filas.length) continue;
       const left = 12 + c*(colW+gap);
       doc.autoTable({
-        startY: by+bh+7, margin:{left, right: pw-left-colW, bottom:14}, tableWidth: colW, theme:'grid',
+        startY: by+bh+6.5+sobH, margin:{left, right: pw-left-colW, bottom:14}, tableWidth: colW, theme:'grid',
         head:[['#','Pieza','Aquí','Se ocupan','Medida final (mm)']],
         body: filas.map(r=>[r.nums, r.name, r.cant, r.total, r.med]),
         styles:{fontSize:6.5, cellPadding:0.8}, headStyles:{fillColor:[15,23,42], fontSize:6.2},
@@ -1590,7 +1607,7 @@ function construirPdfOptimizacion(doc, result, ctx){
       });
     }
     doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(71,85,105);
-    doc.text('Aquí = piezas de ese corte en este tablero. Se ocupan = total de ese corte en todo el trabajo. Franja roja = separación de sierra (' + kerf + ' mm). S1, S2… = sobrantes (verde, medida ya sin kerf ni margen: ancho x largo).', 12, ph-10.5);
+    doc.text('Aquí = piezas de ese corte en este tablero. Se ocupan = total de ese corte en todo el trabajo. Franja roja = separación de sierra (' + kerf + ' mm). S1, S2… = sobrantes (verde: todo el espacio libre, medida ya sin kerf ni margen).', 12, ph-10.5);
   });
 
   // Pie de página
