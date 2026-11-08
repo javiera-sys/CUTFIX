@@ -8,6 +8,7 @@
 const STATE = {
   tableros: [],
   piezas: [],
+  habilitados: [],   // [{id, nombre, muebles, incluir, archivo}]
   sobrantes: [],
   params: { kerf:3, tolPos:0, tolNeg:0, margenPer:10, sepMin:3, margenSeg:0, comp:0, rotGlobal:false, veta:true, criterio:'tableros' },
   lastResult: null,
@@ -154,10 +155,12 @@ function renderPiezas(){
       <td>${p.largo}</td>
       <td>${p.ancho}</td>
       <td>${p.cantidad}</td>
+      <td><b>${cantidadTotal(p)}</b></td>
       <td>${p.espesor}</td>
       <td>${p.material}</td>
       <td>${p.veta}</td>
       <td>${p.rot?'Sí':'No'}</td>
+      <td>${habilitadoDe(p) ? escapeHtml(habilitadoDe(p).nombre) : '—'}</td>
       <td>${escapeHtml(p.obs||'')}</td>
       <td class="actions">
         <button class="icon-btn" data-edit="${p.id}">✏️</button>
@@ -174,8 +177,8 @@ function renderPiezas(){
   tbody.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
     STATE.piezas = STATE.piezas.filter(x=>x.id!==b.dataset.del); renderPiezas();
   });
-  const totalP = STATE.piezas.reduce((a,p)=>a+p.cantidad,0);
-  $('countPiezas').textContent = totalP;
+  const totalP = STATE.piezas.reduce((a,p)=>a+cantidadTotal(p),0);
+  $('countPiezas').textContent = STATE.piezas.length;
   $('statPiezas').textContent = totalP;
   saveAuto();
 }
@@ -225,7 +228,7 @@ $('btnAddPieza').onclick = ()=>{
 $('btnCancelPieza').onclick = clearPiezaForm;
 $('btnClearPiezas').onclick = ()=>{
   if(!confirm('¿Eliminar todas las piezas?')) return;
-  STATE.piezas=[]; renderPiezas();
+  STATE.piezas=[]; STATE.habilitados=[]; renderPiezas(); renderHabilitados();
 };
 $('btnEjemplo').onclick = ()=>{
   const ej=[
@@ -298,12 +301,36 @@ function applyTolerance(p){
 /**
  * Expande piezas en unidades individuales por material+espesor.
  */
+/** Habilitado al que pertenece un renglón (o null si es una pieza manual). */
+function habilitadoDe(p){ return p.habId ? (STATE.habilitados||[]).find(h=>h.id===p.habId) || null : null; }
+
+/**
+ * Cantidad total a cortar de un renglón = cantidad por mueble × muebles del habilitado,
+ * redondeada hacia arriba (ej. 0.2 por mueble × 3 muebles = 1 pieza).
+ * Si el habilitado no está incluido (o fue eliminado) no se corta nada.
+ */
+function cantidadTotal(p){
+  if(p.habId){
+    const h = habilitadoDe(p);
+    if(!h || !h.incluir) return 0;
+    return Math.ceil(+(p.cantidad*(+h.muebles||0)).toFixed(6));
+  }
+  return Math.ceil(+(+p.cantidad||0).toFixed(6));
+}
+
+/** Total de piezas de un habilitado con su número de muebles (sin importar si está incluido). */
+function totalPiezasHab(h){
+  return STATE.piezas.filter(p=>p.habId===h.id).reduce((n,p)=>n+Math.ceil(+(p.cantidad*(+h.muebles||0)).toFixed(6)),0);
+}
+
 function expandPieces(){
   const grouped = {};
   STATE.piezas.forEach(p=>{
+    const total = cantidadTotal(p);
+    if(total <= 0) return;
     const key = p.material+'|'+p.espesor;
     if(!grouped[key]) grouped[key] = {material:p.material, espesor:p.espesor, pieces:[]};
-    for(let i=0;i<p.cantidad;i++){
+    for(let i=0;i<total;i++){
       const dim = applyTolerance(p);
       grouped[key].pieces.push({
         id: p.id + '_' + i,
@@ -994,17 +1021,32 @@ function construirPlanoSVG(b, info, opts){
         ? `<line x1="${x+7}" y1="${y+h*0.2}" x2="${x+7}" y2="${y+h*0.8}" stroke="#7c2d12" stroke-width="1.4" marker-end="url(#arr${uid2})"/>`
         : `<line x1="${x+w*0.2}" y1="${y+h-7}" x2="${x+w*0.8}" y2="${y+h-7}" stroke="#7c2d12" stroke-width="1.4" marker-end="url(#arr${uid2})"/>`;
     }
-    // Texto: solo si cabe dentro de la pieza (el resto queda en la leyenda)
-    const dims = `${nf(p.w)}×${nf(p.h)}`;
-    const cands = [];
-    if(opts.showLabels && opts.showDims) cands.push([{t:`#${p.n} ${p.name}`,min:6},{t:dims,fijo:true}]);
-    if(opts.showDims) cands.push([{t:`#${p.n}`,fijo:true},{t:dims,fijo:true}]);
-    if(opts.showLabels) cands.push([{t:`#${p.n} ${p.name}`,min:6}]);
-    cands.push([{t:`#${p.n}`,fijo:true}]);
+    // Medidas centradas sobre cada lado: ancho arriba, alto a la izquierda (si caben); nombre al centro
+    const sw = nf(p.w), sh = nf(p.h);
+    const fe = Math.max(9, Math.min(12, Math.min(w,h)/9)), pad = fe+5;
+    const topOk  = opts.showDims && w >= sw.length*fe*0.6+8 && h >= pad*2+2;
+    const leftOk = opts.showDims && h >= sh.length*fe*0.6+8 && w >= pad*2+2;
+    const enLados = topOk && leftOk;
+    let rx = x, ry = y, rw = w, rh = h;
+    if(enLados){
+      s += `<text x="${x+w/2}" y="${y+fe+1}" text-anchor="middle" font-size="${fe.toFixed(1)}" font-weight="600" fill="#0f172a">${sw}</text>`;
+      s += `<text transform="translate(${x+fe+1} ${y+h/2}) rotate(-90)" text-anchor="middle" font-size="${fe.toFixed(1)}" font-weight="600" fill="#0f172a">${sh}</text>`;
+      rx = x+pad; ry = y+pad; rw = w-2*pad; rh = h-2*pad;
+    }
+    const dims = `${sw}×${sh}`, cands = [];
+    if(enLados){
+      if(opts.showLabels) cands.push([{t:`#${p.n} ${p.name}`,min:6}]);
+      cands.push([{t:`#${p.n}`,fijo:true}]);
+    } else {
+      if(opts.showLabels && opts.showDims) cands.push([{t:`#${p.n} ${p.name}`,min:6},{t:dims,fijo:true}]);
+      if(opts.showDims) cands.push([{t:`#${p.n}`,fijo:true},{t:dims,fijo:true}]);
+      if(opts.showLabels) cands.push([{t:`#${p.n} ${p.name}`,min:6}]);
+      cands.push([{t:`#${p.n}`,fijo:true}]);
+    }
     let lay = null;
-    for(const c of cands){ lay = layoutTextoPieza(c, w, h); if(lay) break; }
+    for(const c of cands){ lay = layoutTextoPieza(c, rw, rh); if(lay) break; }
     if(lay){
-      const lhh = lay.fs*1.3, cx = x+w/2, cy = y+h/2 - (lay.lineas.length-1)*lhh/2;
+      const lhh = lay.fs*1.3, cx = rx+rw/2, cy = ry+rh/2 - (lay.lineas.length-1)*lhh/2;
       lay.lineas.forEach((t,i)=>{
         s += `<text x="${cx}" y="${cy+i*lhh}" text-anchor="middle" dominant-baseline="middle" font-size="${lay.fs.toFixed(1)}" font-weight="${i===0?700:500}" fill="#0f172a">${escSvg(t)}</text>`;
       });
@@ -1012,7 +1054,7 @@ function construirPlanoSVG(b, info, opts){
   });
 
   // Leyenda
-  s += `<text x="${left-30}" y="${legY}" font-size="13" font-weight="700" fill="#0f172a">Piezas de este tablero (medida: ancho × largo, ↻ = girada)</text>`;
+  s += `<text x="${left-30}" y="${legY}" font-size="13" font-weight="700" fill="#0f172a">Piezas de este tablero (medidas en mm sobre cada lado; ↻ = girada)</text>`;
   leyenda.forEach((t,i)=>{ s += `<text x="${left-30}" y="${legY+20+i*lh}" font-size="12" fill="#1e293b">${escSvg(t)}</text>`; });
 
   // Esquema ampliado del kerf
@@ -1162,12 +1204,20 @@ function construirPdfOptimizacion(doc, result, ctx){
   doc.text(`Corte de sierra (kerf): ${kerf} mm   |   Margen perimetral: ${nf(P.margenPer + P.margenSeg)} mm   |   Método: ${ctx.modo}`, 12, 33);
   doc.text(`Piezas: ${totCol} de ${totReq} colocadas   |   Tableros necesarios: ${totTab}   |   Aprovechamiento global: ${aT? (aP/aT*100).toFixed(1):'0.0'}%`, 12, 38);
 
+  let yTab = 47;
+  const habInc = (STATE.habilitados||[]).filter(h=>h.incluir && h.muebles>0);
+  if(habInc.length){
+    const txt = doc.splitTextToSize('Habilitados incluidos: ' + habInc.map(h=>`${h.nombre} (${h.muebles} mueble${h.muebles>1?'s':''})`).join('; '), 186);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(51,65,85);
+    doc.text(txt, 12, 43);
+    yTab = 43 + txt.length*4.2 + 6;
+  }
   doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(15,23,42);
-  doc.text('Resumen de materiales y cantidades', 12, 47);
+  doc.text('Resumen de materiales y cantidades', 12, yTab);
   const body = resumen.map(r=>[r.material, nf(r.espesor), r.medidas.replace(/,/g,''), r.requeridas, r.colocadas+(r.sinColocar?` (${r.sinColocar} sin colocar)`:''), r.tableros, kerf, r.aprov.toFixed(1)+'%', `${(r.desperdicioMm2/1e6).toFixed(2)} m2 (${r.desperdicioPct.toFixed(1)}%)`]);
   body.push(['TOTAL','','',totReq,totCol,totTab,kerf,(aT?(aP/aT*100).toFixed(1):'0.0')+'%',`${((aT-aP)/1e6).toFixed(2)} m2 (${aT?((aT-aP)/aT*100).toFixed(1):'0.0'}%)`]);
   doc.autoTable({
-    startY: 50, margin:{left:12,right:12}, theme:'grid',
+    startY: yTab+3, margin:{left:12,right:12}, theme:'grid',
     head:[['Material','Espesor (mm)','Tablero (mm)','Piezas req.','Colocadas','Tableros','Kerf (mm)','Aprovech.','Desperdicio']],
     body, styles:{fontSize:8, cellPadding:1.6}, headStyles:{fillColor:[15,23,42]},
     didParseCell: d=>{ if(d.section==='body' && d.row.index===body.length-1){ d.cell.styles.fontStyle='bold'; d.cell.styles.fillColor=[226,232,240]; } }
@@ -1246,16 +1296,29 @@ function construirPdfOptimizacion(doc, result, ctx){
       const x = bx+p.x*sc, yy = y0+p.y*sc, w = p.w*sc, h = p.h*sc;
       doc.setFillColor(...hslAArreglo(hslColorFromString(p.material+p.name)));
       doc.rect(x, yy, w, h, 'FD');
-      const dims = `${nf(p.w)}x${nf(p.h)}`;
-      const lay = textoPiezaPdf(doc, [
-        [{t:`#${p.n} ${p.name}`}, {t:dims, fijo:true}],
-        [{t:`#${p.n}`, fijo:true}, {t:dims, fijo:true}],
-        [{t:`#${p.n}`, fijo:true}]
-      ], w, h);
+      // Medidas centradas sobre cada lado (ancho arriba, alto a la izquierda) si caben; nombre al centro
+      const sw = nf(p.w), sh = nf(p.h);
+      const fe = Math.max(7, Math.min(10, Math.min(w,h)/5)), th = fe*0.3528, pad = th+2.4;
+      doc.setFont('helvetica','bold'); doc.setFontSize(fe);
+      const topOk  = doc.getTextWidth(sw)+2 <= w && h >= pad*2+2;
+      const leftOk = doc.getTextWidth(sh)+2 <= h && w >= pad*2+2;
+      const enLados = topOk && leftOk;
+      let rx = x, ry = yy, rw = w, rh = h;
+      doc.setTextColor(15,23,42);
+      if(enLados){
+        doc.text(sw, x+w/2, yy+th+1.4, {align:'center'});
+        doc.text(sh, x+th+1.4, yy+h/2, {align:'center', angle:90});
+        rx = x+pad; ry = yy+pad; rw = w-2*pad; rh = h-2*pad;
+      }
+      const dims = `${sw}x${sh}`;
+      const cands = enLados
+        ? [[{t:`#${p.n} ${p.name}`}], [{t:`#${p.n}`, fijo:true}]]
+        : [[{t:`#${p.n} ${p.name}`}, {t:dims, fijo:true}], [{t:`#${p.n}`, fijo:true}, {t:dims, fijo:true}], [{t:`#${p.n}`, fijo:true}]];
+      const lay = textoPiezaPdf(doc, cands, rw, rh);
       if(lay){
         doc.setFontSize(lay.fs); doc.setTextColor(15,23,42);
-        const top = yy + h/2 - (lay.lines.length*lay.lh)/2 + lay.lh*0.75;
-        lay.lines.forEach((t,i)=>{ doc.setFont('helvetica', i===0?'bold':'normal'); doc.text(t, x+w/2, top+i*lay.lh, {align:'center'}); });
+        const top = ry + rh/2 - (lay.lines.length*lay.lh)/2 + lay.lh*0.75;
+        lay.lines.forEach((t,i)=>{ doc.setFont('helvetica', i===0?'bold':'normal'); doc.text(t, rx+rw/2, top+i*lay.lh, {align:'center'}); });
       }
     });
 
@@ -1506,7 +1569,7 @@ function procesarFilasExcel(rows, map, opts){
 
     let cant = parseNum(get('cantidad'));
     if(!(cant>0)){ it.estado='error'; it.motivo='Falta cantidad'; warnings.push(`Fila ${it.fila}: falta cantidad.`); continue; }
-    if(!Number.isInteger(cant)){ warnings.push(`Fila ${it.fila}: cantidad ${cant} no es entera, se redondea hacia arriba a ${Math.ceil(cant)}.`); cant = Math.ceil(cant); }
+    if(!Number.isInteger(cant)) warnings.push(`Fila ${it.fila}: cantidad por mueble ${cant} no es entera; al multiplicar por los muebles se redondea hacia arriba.`);
 
     let esp = parseNum(get('espesor'));
     if(esp>0) esp = round2(esp*factor);
@@ -1585,6 +1648,9 @@ function showExcelMapping(){
   $('impUnidades').oninput = updateExcelPreview;
   $('impUnidadMedida').onchange = updateExcelPreview;
   $('impVeta').onchange = updateExcelPreview;
+  $('impMuebles').oninput = updateExcelPreview;
+  $('impHabNombre').value = _excelFileName.replace(/\.[^.]+$/,'');
+  $('impMuebles').value = 1;
   updateExcelPreview();
 }
 
@@ -1629,9 +1695,10 @@ function updateExcelPreview(){
   const ok = res.items.filter(x=>x.estado==='ok');
   const ign = res.items.filter(x=>x.estado==='ignorada').length;
   const err = res.items.filter(x=>x.estado==='error').length;
-  const piezasTot = ok.reduce((s,x)=>s+x.cantidad,0);
+  const muebles = Math.max(1, Math.floor(+$('impMuebles').value||1));
+  const piezasTot = ok.reduce((s,x)=>s+Math.ceil(+(x.cantidad*muebles).toFixed(6)),0);
   $('excelWarnings').innerHTML =
-    `<b>${ok.length}</b> renglones entran a optimización (${piezasTot} piezas) · ${ign} ignorados por unidad · ${err} con error` +
+    `<b>${ok.length}</b> renglones entran a optimización (${piezasTot} piezas para ${muebles} mueble${muebles>1?'s':''}) · ${ign} ignorados por unidad · ${err} con error` +
     (res.warnings.length ? '<br>⚠️ ' + res.warnings.slice(0,12).map(escapeHtml).join('<br>⚠️ ') + (res.warnings.length>12?`<br>… y ${res.warnings.length-12} más`:'') : '');
   $('excelReviewTable').querySelector('thead').innerHTML =
     '<tr><th>Fila</th><th>Descripción</th><th>Unidad</th><th>Material</th><th>Esp. (mm)</th><th>Cant.</th><th>Veta</th>'+
@@ -1668,12 +1735,19 @@ $('btnConfirmImport').onclick = ()=>{
   const existentes = new Set(STATE.piezas.map(p=>p.srcKey).filter(Boolean));
   let count = 0, dup = 0;
   const combos = new Set();
+  const hab = {
+    id: uid(),
+    nombre: ($('impHabNombre').value.trim() || _excelFileName.replace(/\.[^.]+$/,'')),
+    muebles: Math.max(1, Math.floor(+$('impMuebles').value||1)),
+    incluir: true, archivo: _excelFileName
+  };
   ok.forEach(x=>{
     if(existentes.has(x.srcKey)){ dup++; return; }
     STATE.piezas.push({
       id: uid(), nombre: x.nombre, largo: x.largo, ancho: x.ancho,
       cantidad: x.cantidad, espesor: x.espesor, material: x.material,
       veta: x.veta, rot: x.veta==='ninguna', obs: '',
+      habId: hab.id,
       unidad: x.unidad, tolAncho: x.tolAncho, tolLargo: x.tolLargo,
       tolAnchoTxt: x.tolAnchoTxt, tolLargoTxt: x.tolLargoTxt, srcKey: x.srcKey
     });
@@ -1691,9 +1765,11 @@ $('btnConfirmImport').onclick = ()=>{
       nuevos++;
     }
   });
-  renderPiezas(); renderTableros();
+  if(count>0) STATE.habilitados.push(hab);
+  renderPiezas(); renderTableros(); renderHabilitados();
   const msg = `Importadas ${count} piezas` + (dup?` · ${dup} ya existían`:'') + (errores?` · ${errores} con error`:'') + (nuevos?` · ${nuevos} tableros 2440×1220 creados`:'');
-  toast(msg, errores?'error':'success');
+  toast(msg + (count>0 ? ` · habilitado "${hab.nombre}" × ${hab.muebles} mueble(s)` : ''), errores?'error':'success');
+  if(count>0) document.querySelector('.nav-btn[data-section="habilitados"]').click();
 };
 
 /* =========================================================
@@ -1796,12 +1872,68 @@ function hslToRgb(hslStr){
 }
 
 /* =========================================================
+   HABILITADOS (cada Excel importado = un habilitado con N muebles)
+   ========================================================= */
+function renderHabilitados(){
+  const tb = $('tablaHab').querySelector('tbody');
+  tb.innerHTML = '';
+  STATE.habilitados.forEach(h=>{
+    const piezas = STATE.piezas.filter(p=>p.habId===h.id);
+    const porMueble = piezas.reduce((n,p)=>n+p.cantidad,0);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="text-align:center"><input type="checkbox" data-inc="${h.id}" ${h.incluir?'checked':''}></td>
+      <td><b>${escapeHtml(h.nombre)}</b><br><small style="color:#6b7685">${escapeHtml(h.archivo||'')}</small></td>
+      <td>${piezas.length}</td>
+      <td>${fmt(porMueble,2).replace(/\.?0+$/,'')}</td>
+      <td><input type="number" min="0" step="1" value="${h.muebles}" data-mue="${h.id}" style="width:80px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></td>
+      <td><b id="habTot_${h.id}">${totalPiezasHab(h)}</b></td>
+      <td class="actions"><button class="icon-btn" data-ren="${h.id}" title="Renombrar">✏️</button><button class="icon-btn del" data-delhab="${h.id}" title="Eliminar habilitado">🗑</button></td>`;
+    tr.style.opacity = h.incluir ? '1' : '.55';
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('[data-inc]').forEach(c=>c.onchange=()=>{
+    STATE.habilitados.find(h=>h.id===c.dataset.inc).incluir = c.checked;
+    renderHabilitados(); renderPiezas();
+  });
+  tb.querySelectorAll('[data-mue]').forEach(i=>i.onchange=()=>{
+    const h = STATE.habilitados.find(x=>x.id===i.dataset.mue);
+    h.muebles = Math.max(0, Math.floor(+i.value||0));
+    renderHabilitados(); renderPiezas();
+  });
+  tb.querySelectorAll('[data-ren]').forEach(b=>b.onclick=()=>{
+    const h = STATE.habilitados.find(x=>x.id===b.dataset.ren);
+    const n = prompt('Nombre del habilitado:', h.nombre); if(n && n.trim()){ h.nombre = n.trim(); renderHabilitados(); renderPiezas(); }
+  });
+  tb.querySelectorAll('[data-delhab]').forEach(b=>b.onclick=()=>{
+    const h = STATE.habilitados.find(x=>x.id===b.dataset.delhab);
+    if(!confirm(`¿Eliminar el habilitado "${h.nombre}" y sus ${STATE.piezas.filter(p=>p.habId===h.id).length} renglones?`)) return;
+    STATE.piezas = STATE.piezas.filter(p=>p.habId!==h.id);
+    STATE.habilitados = STATE.habilitados.filter(x=>x.id!==h.id);
+    renderHabilitados(); renderPiezas();
+  });
+  const inc = STATE.habilitados.filter(h=>h.incluir && h.muebles>0);
+  const piezasHab = inc.reduce((n,h)=>n+totalPiezasHab(h),0);
+  const manuales = STATE.piezas.filter(p=>!p.habId).reduce((n,p)=>n+cantidadTotal(p),0);
+  $('countHab').textContent = STATE.habilitados.length;
+  $('habResumen').innerHTML = STATE.habilitados.length
+    ? `Se cortarán juntos <b>${inc.length}</b> habilitado(s): ${inc.map(h=>`${escapeHtml(h.nombre)} ×${h.muebles}`).join(', ') || '—'}.<br>` +
+      `Total: <b>${piezasHab}</b> piezas de habilitados` + (manuales?` + <b>${manuales}</b> piezas manuales`:'') + '.'
+    : 'Aún no hay habilitados. Importa un Excel en "Importar Excel" y aparecerá aquí.';
+  saveAuto();
+}
+$('btnHabTodos').onclick = ()=>{ STATE.habilitados.forEach(h=>h.incluir=true); renderHabilitados(); renderPiezas(); };
+$('btnHabNinguno').onclick = ()=>{ STATE.habilitados.forEach(h=>h.incluir=false); renderHabilitados(); renderPiezas(); };
+$('btnHabCalcular').onclick = ()=> document.querySelector('.nav-btn[data-section="optimizacion"]').click();
+
+/* =========================================================
    PROYECTOS (localStorage)
    ========================================================= */
 function saveAuto(){
   const data = {
     tableros: STATE.tableros,
     piezas: STATE.piezas,
+    habilitados: STATE.habilitados,
     sobrantes: STATE.sobrantes,
     params: STATE.params,
     projectName: STATE.projectName
@@ -1818,6 +1950,7 @@ function loadAuto(){
     const data = JSON.parse(raw);
     if(data.tableros) STATE.tableros = data.tableros;
     if(data.piezas) STATE.piezas = data.piezas;
+    STATE.habilitados = data.habilitados || [];
     if(data.sobrantes) STATE.sobrantes = data.sobrantes;
     if(data.params) STATE.params = {...STATE.params, ...data.params};
     if(data.projectName) STATE.projectName = data.projectName;
@@ -1830,7 +1963,7 @@ $('btnSaveProj').onclick = ()=>{
   if(!name) return;
   STATE.projectName = name;
   const data = {
-    tableros: STATE.tableros, piezas: STATE.piezas, sobrantes: STATE.sobrantes,
+    tableros: STATE.tableros, piezas: STATE.piezas, habilitados: STATE.habilitados, sobrantes: STATE.sobrantes,
     params: STATE.params, projectName: name, savedAt: new Date().toISOString()
   };
   const list = JSON.parse(localStorage.getItem('opticorte_projects')||'{}');
@@ -1846,23 +1979,23 @@ $('btnLoadProj').onclick = ()=>{
   const sel = prompt('Proyecto a cargar:\n' + names.join('\n'), names[0]);
   if(!sel || !list[sel]) return;
   const data = list[sel];
-  STATE.tableros = data.tableros; STATE.piezas = data.piezas;
+  STATE.tableros = data.tableros; STATE.piezas = data.piezas; STATE.habilitados = data.habilitados || [];
   STATE.sobrantes = data.sobrantes; STATE.params = data.params;
   STATE.projectName = data.projectName;
-  renderTableros(); renderPiezas(); renderSobrantes(); loadParamsUI();
+  renderTableros(); renderPiezas(); renderHabilitados(); renderSobrantes(); loadParamsUI();
   $('projInfo').innerHTML = `Proyecto: <b>${escapeHtml(sel)}</b>`;
   toast('Proyecto cargado','success');
 };
 $('btnNewProj').onclick = ()=>{
   if(!confirm('¿Crear nuevo proyecto? Se perderán los cambios no guardados.')) return;
-  STATE.tableros = []; STATE.piezas = []; STATE.sobrantes = [];
+  STATE.tableros = []; STATE.piezas = []; STATE.habilitados = []; STATE.sobrantes = [];
   STATE.lastResult = null; STATE.projectName = 'Sin guardar';
-  renderTableros(); renderPiezas(); renderSobrantes();
+  renderTableros(); renderPiezas(); renderHabilitados(); renderSobrantes();
   $('projInfo').innerHTML = 'Proyecto: <b>Sin guardar</b>';
   toast('Nuevo proyecto');
 };
 $('btnExpProj').onclick = ()=>{
-  const data = {tableros:STATE.tableros, piezas:STATE.piezas, sobrantes:STATE.sobrantes, params:STATE.params, projectName:STATE.projectName};
+  const data = {tableros:STATE.tableros, piezas:STATE.piezas, habilitados:STATE.habilitados, sobrantes:STATE.sobrantes, params:STATE.params, projectName:STATE.projectName};
   const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1878,10 +2011,11 @@ $('projFile').onchange = (e)=>{
       const data = JSON.parse(evt.target.result);
       if(data.tableros) STATE.tableros = data.tableros;
       if(data.piezas) STATE.piezas = data.piezas;
+      STATE.habilitados = data.habilitados || [];
       if(data.sobrantes) STATE.sobrantes = data.sobrantes;
       if(data.params) STATE.params = data.params;
       if(data.projectName) STATE.projectName = data.projectName;
-      renderTableros(); renderPiezas(); renderSobrantes(); loadParamsUI();
+      renderTableros(); renderPiezas(); renderHabilitados(); renderSobrantes(); loadParamsUI();
       $('projInfo').innerHTML = `Proyecto: <b>${escapeHtml(STATE.projectName)}</b>`;
       toast('Proyecto importado','success');
     }catch(err){ toast('Archivo inválido','error'); }
@@ -1905,6 +2039,7 @@ function init(){
   loadParamsUI();
   renderTableros();
   renderPiezas();
+  renderHabilitados();
   renderSobrantes();
   $('hojaFecha').value = new Date().toISOString().slice(0,10);
   if(hadData){
