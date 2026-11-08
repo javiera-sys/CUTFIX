@@ -1,5 +1,5 @@
 /* =========================================================
-   OptiCorte Pro -- Motor de optimización y UI
+   CUTFIX PRO -- Motor de optimización y UI
    Autor: Sistema original (basado en conceptos públicos de
    Guillotine bin packing y MaxRects).
    ========================================================= */
@@ -17,11 +17,15 @@ const STATE = {
   excelRows: null,
   excelCols: null,
   zoom: 1,
+  orientacion: 'horizontal',   // giro VISUAL del tablero: 'horizontal' | 'vertical' (no afecta el cálculo)
   projectName: 'Sin guardar'
 };
 
 const uid = () => '_' + Math.random().toString(36).slice(2,10);
 const $ = id => document.getElementById(id);
+/* ---------- ICONOS (sprite SVG definido en index.html) ---------- */
+const ico = (n,cls='ico') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+function setBtn(btn, icon, text){ btn.innerHTML = ico(icon)+'<span>'+text+'</span>'; }
 const fmt = (n,d=0) => Number(n).toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d});
 
 /* ---------- TOAST ---------- */
@@ -41,14 +45,12 @@ document.querySelectorAll('.nav-btn').forEach(btn=>{
     btn.classList.add('active');
     const sec = $('sec-' + btn.dataset.section);
     if(sec) sec.classList.add('active');
-    if(window.innerWidth <= 900) $('sidebar').classList.remove('open');
+    if(window.innerWidth <= 1024) $('sidebar').classList.remove('open');
   });
 });
 
 /* ---------- MENÚ MÓVIL ---------- */
-const menuToggle = document.createElement('button');
-menuToggle.className='menu-toggle'; menuToggle.textContent='☰';
-document.body.appendChild(menuToggle);
+const menuToggle = $('menuToggle');
 menuToggle.onclick=()=>$('sidebar').classList.toggle('open');
 
 /* =========================================================
@@ -70,9 +72,9 @@ function renderTableros(){
       <td>${t.veta}</td>
       <td>${t.cantidad}</td>
       <td class="actions">
-        <button class="icon-btn" data-edit="${t.id}" title="Editar">✏️</button>
-        <button class="icon-btn" data-dup="${t.id}" title="Duplicar">⧉</button>
-        <button class="icon-btn del" data-del="${t.id}" title="Eliminar">🗑</button>
+        <button class="icon-btn" data-edit="${t.id}" title="Editar">${ico('edit')}</button>
+        <button class="icon-btn" data-dup="${t.id}" title="Duplicar">${ico('copy')}</button>
+        <button class="icon-btn del" data-del="${t.id}" title="Eliminar">${ico('delete')}</button>
       </td>`;
     tbody.appendChild(tr);
   });
@@ -91,7 +93,7 @@ function loadTableroForm(id){
   $('tColor').value=t.color; $('tVeta').value=t.veta;
   $('tCantidad').value=t.cantidad; $('tMargen').value=t.margen||0;
   STATE.editTabId=id;
-  $('btnAddTablero').textContent='💾 Actualizar tablero';
+  setBtn($('btnAddTablero'),'save','Actualizar tablero');
   $('btnCancelTablero').style.display='inline-block';
 }
 
@@ -100,7 +102,7 @@ function clearTableroForm(){
   $('tEspesor').value=18; $('tPrecio').value=0; $('tColor').value='#c8a878';
   $('tVeta').value='largo'; $('tCantidad').value=10; $('tMargen').value=0;
   STATE.editTabId=null;
-  $('btnAddTablero').textContent='➕ Agregar tablero';
+  setBtn($('btnAddTablero'),'add','Agregar tablero');
   $('btnCancelTablero').style.display='none';
 }
 
@@ -163,9 +165,9 @@ function renderPiezas(){
       <td>${habilitadoDe(p) ? escapeHtml(habilitadoDe(p).nombre) : '—'}</td>
       <td>${escapeHtml(p.obs||'')}</td>
       <td class="actions">
-        <button class="icon-btn" data-edit="${p.id}">✏️</button>
-        <button class="icon-btn" data-dup="${p.id}">⧉</button>
-        <button class="icon-btn del" data-del="${p.id}">🗑</button>
+        <button class="icon-btn" data-edit="${p.id}">${ico('edit')}</button>
+        <button class="icon-btn" data-dup="${p.id}">${ico('copy')}</button>
+        <button class="icon-btn del" data-del="${p.id}">${ico('delete')}</button>
       </td>`;
     tbody.appendChild(tr);
   });
@@ -190,7 +192,7 @@ function loadPiezaForm(id){
   $('pMaterial').value=p.material; $('pVeta').value=p.veta;
   $('pRot').value=p.rot?'true':'false'; $('pObs').value=p.obs||'';
   STATE.editPiezaId=id;
-  $('btnAddPieza').textContent='💾 Actualizar pieza';
+  setBtn($('btnAddPieza'),'save','Actualizar pieza');
   $('btnCancelPieza').style.display='inline-block';
 }
 function clearPiezaForm(){
@@ -198,7 +200,7 @@ function clearPiezaForm(){
   $('pCant').value=1; $('pEspesor').value=18; $('pMaterial').value='Melamina';
   $('pVeta').value='ninguna'; $('pRot').value='true'; $('pObs').value='';
   STATE.editPiezaId=null;
-  $('btnAddPieza').textContent='➕ Agregar pieza';
+  setBtn($('btnAddPieza'),'add','Agregar pieza');
   $('btnCancelPieza').style.display='none';
 }
 
@@ -820,7 +822,7 @@ function calcularResultados(estrategias, onPaso){
     const sin = STATE.bestResult ? STATE.bestResult.unplaced : [];
     if(sin.length){
       const mot = [...new Set(sin.map(p=>p.reason||'Sin tablero disponible'))].join('; ');
-      el.innerHTML = `⚠️ <b>${sin.length} pieza(s) NO se pudieron colocar</b> (${escapeHtml(mot)}). Si es por falta de tableros, aumenta la cantidad disponible en Tableros y vuelve a calcular.`;
+      el.innerHTML = `${ico('warn','ico ico-inline')} <b>${sin.length} pieza(s) NO se pudieron colocar</b> (${escapeHtml(mot)}). Si es por falta de tableros, aumenta la cantidad disponible en Tableros y vuelve a calcular.`;
       el.style.display = 'block';
     } else el.style.display = 'none';
   }
@@ -900,8 +902,8 @@ function renderComparison(results){
   });
   $('comparisonCard').style.display='block';
   $('bestModeBox').innerHTML = results.length===1
-    ? `✅ Resultado del método <b>${best.name}</b> — ${best.metrics.tableros} tableros, ${best.metrics.aprovechamiento.toFixed(2)}% aprovechamiento.`
-    : `✅ Mejor resultado según criterio <b>"${STATE.params.criterio}"</b>: <b>${best.name}</b> — ${best.metrics.tableros} tableros, ${best.metrics.aprovechamiento.toFixed(2)}% aprovechamiento.`;
+    ? `${ico('check','ico ico-inline')} Resultado del método <b>${best.name}</b> — ${best.metrics.tableros} tableros, ${best.metrics.aprovechamiento.toFixed(2)}% aprovechamiento.`
+    : `${ico('check','ico ico-inline')} Mejor resultado según criterio <b>"${STATE.params.criterio}"</b>: <b>${best.name}</b> — ${best.metrics.tableros} tableros, ${best.metrics.aprovechamiento.toFixed(2)}% aprovechamiento.`;
   $('statModo').textContent = best.name;
   $('statAprov').textContent = best.metrics.aprovechamiento.toFixed(1)+'%';
 }
@@ -953,9 +955,17 @@ function renderPlanoSelector(results){
   else $('planoContainer').innerHTML = '<p class="empty-msg">No hay tableros utilizados.</p>';
 }
 
-function applyZoom(){
-  const svg = $('planoContainer').querySelector('svg');
-  if(svg) svg.style.transform = `scale(${STATE.zoom})`;
+function applyZoom(){ aplicarZoomSvg($('planoContainer').querySelector('svg')); }
+/** Zoom vectorial: se cambia el tamaño real del SVG (no un transform), así el dibujo se re-renderiza nítido en cada nivel. */
+function aplicarZoomSvg(svg){
+  if(!svg) return;
+  const w = +svg.getAttribute('width') || 600, z = STATE.zoom;
+  const cw = svg.parentElement ? svg.parentElement.clientWidth - 40 : 0;
+  const base = cw > 120 ? Math.min(w, cw) : w;      // si la sección está oculta, usa el tamaño natural
+  svg.style.transform = 'none';
+  svg.style.width = (base*z) + 'px';
+  svg.style.height = 'auto';
+  svg.style.maxWidth = z > 1.0001 ? 'none' : '100%';
 }
 
 // <<PLANO-START (sin DOM; se prueba por separado)
@@ -963,6 +973,37 @@ const textoVeta = v => v==='largo' ? 'a lo largo' : v==='ancho' ? 'a lo ancho' :
 const nf = n => Number.isInteger(+n) ? fmt(n,0) : fmt(n,1);
 const escSvg = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const truncTxt = (s,n)=> s.length>n ? s.slice(0,Math.max(1,n-1))+'…' : s;
+
+/** ¿Se dibuja el tablero girado 90°? 'horizontal' = lado largo en horizontal; 'vertical' = lado largo en vertical. Solo afecta el dibujo. */
+function giroActivo(board){
+  return STATE.orientacion==='vertical' ? board.ancho > board.largo : board.largo >= board.ancho;
+}
+
+/**
+ * Rectángulo punteado vectorial con separación UNIFORME: cada lado empieza y termina con trazo completo y la
+ * separación se ajusta para que el patrón encaje exacto (sin trazos pegados, cortados ni superpuestos).
+ * ext = prolongación en las esquinas (mitad del grosor) para que cierren limpias. Devuelve [[x1,y1,x2,y2],...].
+ */
+function segmentosRectPunteado(x,y,w,h,dash,gap,ext){
+  const out = []; ext = ext||0;
+  const lado = (x1,y1,x2,y2)=>{
+    const L = Math.hypot(x2-x1,y2-y1); if(!(L>0)) return;
+    const ux=(x2-x1)/L, uy=(y2-y1)/L;
+    let n = Math.max(1, Math.round((L+gap)/(dash+gap)));
+    let g = n>1 ? (L-n*dash)/(n-1) : 0;
+    while(n>1 && g<gap*0.7){ n--; g = n>1 ? (L-n*dash)/(n-1) : 0; }
+    if(n===1){ out.push([x1-ux*ext,y1-uy*ext,x2+ux*ext,y2+uy*ext]); return; }
+    for(let i=0;i<n;i++){
+      let a=i*(dash+g), b=a+dash;
+      if(i===0) a-=ext;
+      if(i===n-1) b+=ext;
+      out.push([x1+ux*a,y1+uy*a,x1+ux*b,y1+uy*b]);
+    }
+  };
+  lado(x,y,x+w,y); lado(x+w,y,x+w,y+h); lado(x+w,y+h,x,y+h); lado(x,y+h,x,y);
+  return out;
+}
+const dPath = segs => segs.map(g=>`M${g[0].toFixed(2)} ${g[1].toFixed(2)}L${g[2].toFixed(2)} ${g[3].toFixed(2)}`).join('');
 
 /** "3, 4, 5, 9" -> "3–5, 9" */
 function compactarNumeros(nums){
@@ -1108,11 +1149,15 @@ function layoutTextoPieza(lineas, pw, ph){
 function construirPlanoSVG(b, info, opts){
   const P = STATE.params, board = b.board, placed = b.placed;
   const W = board.ancho, H = board.largo, kerf = P.kerf, m = margenTablero(board);
-  const scale = Math.min(860/W, 760/H, 1.2);
-  const bw = W*scale, bh = H*scale;
+  const R = giroActivo(board);                       // giro visual de 90° (no toca las coordenadas calculadas)
+  const BW = R ? H : W, BH = R ? W : H;              // tamaño visible del tablero
+  const scale = Math.min(860/BW, 760/BH, 1.2);
+  const bw = BW*scale, bh = BH*scale;
   const top = 138, left = 70, right = 30;
   const svgW = Math.max(left+bw+right, 600);
   const x0 = left + (svgW-left-right-bw)/2, y0 = top;
+  // tablero (mm) -> dibujo (px). Con giro: ancho<->largo y eje invertido (90° antihorario), igual que en el PDF.
+  const T = (x,y,w,h)=> R ? {x:x0+y*scale, y:y0+(W-x-w)*scale, w:h*scale, h:w*scale} : {x:x0+x*scale, y:y0+y*scale, w:w*scale, h:h*scale};
   const uid2 = 'p'+info.numero;
 
   // Piezas numeradas en el orden de colocación
@@ -1139,12 +1184,13 @@ function construirPlanoSVG(b, info, opts){
   const svgH = legY + 22 + leyenda.length*lh + 50;
 
   let s = '';
-  s += `<svg xmlns="http://www.w3.org/2000/svg" class="plano-svg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" font-family="Segoe UI, Arial, sans-serif">`;
+  s += `<svg xmlns="http://www.w3.org/2000/svg" class="plano-svg" shape-rendering="geometricPrecision" text-rendering="geometricPrecision" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" font-family="Segoe UI, Arial, sans-serif">`;
   s += `<defs><pattern id="hatch${uid2}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="#cbd5e1" stroke-width="1"/></pattern>`+
        `<marker id="arr${uid2}" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto"><polygon points="0,0 6,3 0,6" fill="#7c2d12"/></marker></defs>`;
   s += `<rect width="${svgW}" height="${svgH}" fill="#fff"/>`;
 
   // Encabezado
+  s += `<text x="${svgW-20}" y="24" text-anchor="end" font-size="13" font-weight="800" letter-spacing="1.2" fill="#2358e6">CUTFIX PRO</text>`;
   s += `<text x="${left-30}" y="24" font-size="17" font-weight="700" fill="#0f172a">Tablero ${info.numero} de ${info.total} — ${escSvg(board.material)} · espesor ${nf(board.espesor)} mm</text>`;
   s += `<text x="${left-30}" y="44" font-size="12.5" fill="#334155">Tablero ${info.secMat} de ${info.totMat} de este material · Medidas: ${fmt(W)} × ${fmt(H)} mm (ancho × largo)</text>`;
   s += `<text x="${left-30}" y="62" font-size="12.5" fill="#334155">Corte de sierra (kerf): ${kerf} mm · Margen perimetral: ${nf(m)} mm · Veta del tablero: ${textoVeta(board.veta)}</text>`;
@@ -1157,22 +1203,20 @@ function construirPlanoSVG(b, info, opts){
   const ty = y0-16;
   s += `<g stroke="#334155" stroke-width="1" fill="none"><line x1="${x0}" y1="${ty}" x2="${x0+bw}" y2="${ty}"/><line x1="${x0}" y1="${ty-4}" x2="${x0}" y2="${ty+4}"/><line x1="${x0+bw}" y1="${ty-4}" x2="${x0+bw}" y2="${ty+4}"/>`+
        `<line x1="${x0-16}" y1="${y0}" x2="${x0-16}" y2="${y0+bh}"/><line x1="${x0-20}" y1="${y0}" x2="${x0-12}" y2="${y0}"/><line x1="${x0-20}" y1="${y0+bh}" x2="${x0-12}" y2="${y0+bh}"/></g>`;
-  s += `<text x="${x0+bw/2}" y="${ty-5}" text-anchor="middle" font-size="12" font-weight="600" fill="#0f172a">${fmt(W)} mm</text>`;
-  s += `<text transform="translate(${x0-22} ${y0+bh/2}) rotate(-90)" text-anchor="middle" font-size="12" font-weight="600" fill="#0f172a">${fmt(H)} mm</text>`;
+  s += `<text x="${x0+bw/2}" y="${ty-5}" text-anchor="middle" font-size="12" font-weight="600" fill="#0f172a">${fmt(BW)} mm</text>`;
+  s += `<text transform="translate(${x0-22} ${y0+bh/2}) rotate(-90)" text-anchor="middle" font-size="12" font-weight="600" fill="#0f172a">${fmt(BH)} mm</text>`;
 
   // Tablero: fondo, sobrante rayado y margen
   s += `<rect x="${x0}" y="${y0}" width="${bw}" height="${bh}" fill="#f8fafc" stroke="#334155" stroke-width="2"/>`;
   s += `<rect x="${x0}" y="${y0}" width="${bw}" height="${bh}" fill="url(#hatch${uid2})"/>`;
-  s += `<rect x="${x0+m*scale}" y="${y0+m*scale}" width="${(W-2*m)*scale}" height="${(H-2*m)*scale}" fill="none" stroke="#94a3b8" stroke-dasharray="4 3"/>`;
+  { const mr = T(m, m, W-2*m, H-2*m);   // margen perimetral: trazos vectoriales con separación uniforme
+    s += `<path d="${dPath(segmentosRectPunteado(mr.x, mr.y, mr.w, mr.h, 4, 3, 0.5))}" fill="none" stroke="#94a3b8" stroke-width="1" stroke-linecap="butt"/>`; }
 
   // Bandas de kerf (debajo de las piezas)
   if(opts.showCuts){
-    const kb = Math.max(kerf*scale, 1.5);
-    piezas.forEach(p=>{
-      const x = x0+p.x*scale, y = y0+p.y*scale, w = p.w*scale, h = p.h*scale;
-      s += `<rect x="${x+w}" y="${y}" width="${kb}" height="${h+kb}" fill="#ef4444" fill-opacity="0.6"/>`;
-      s += `<rect x="${x}" y="${y+h}" width="${w+kb}" height="${kb}" fill="#ef4444" fill-opacity="0.6"/>`;
-    });
+    // Franjas de kerf opacas y sin traslape (la segunda franja no repite la esquina de la primera)
+    const mk = r => `<rect x="${r.x.toFixed(2)}" y="${r.y.toFixed(2)}" width="${Math.max(r.w,1.5).toFixed(2)}" height="${Math.max(r.h,1.5).toFixed(2)}" fill="#f28b8b"/>`;
+    piezas.forEach(p=>{ s += mk(T(p.x+p.w, p.y, kerf, p.h+kerf)); s += mk(T(p.x, p.y+p.h, p.w, kerf)); });
   }
 
   // Medidas centradas sobre cada lado (ancho arriba, alto a la izquierda) + nombre COMPLETO al centro
@@ -1207,22 +1251,23 @@ function construirPlanoSVG(b, info, opts){
 
   // Sobrantes (como otro tablero: verde punteado)
   sobrantes.forEach((r,i)=>{
-    const x = x0+r.x*scale, y = y0+r.y*scale, w = r.w*scale, h = r.h*scale;
-    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#bbf7d0" fill-opacity="0.55" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="6 4"/>`;
-    s += etiquetas(x,y,w,h,r.w,r.h,`S${i+1} SOBRANTE`);
+    const q = T(r.x, r.y, r.w, r.h), x = q.x, y = q.y, w = q.w, h = q.h;
+    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#bbf7d0" fill-opacity="0.55"/>`;
+    s += `<path d="${dPath(segmentosRectPunteado(x, y, w, h, 6, 4, 0.75))}" fill="none" stroke="#16a34a" stroke-width="1.5" stroke-linecap="butt"/>`;
+    s += etiquetas(x,y,w,h, R ? r.h : r.w, R ? r.w : r.h, `S${i+1} SOBRANTE`);
   });
 
   // Piezas
   piezas.forEach(p=>{
-    const x = x0+p.x*scale, y = y0+p.y*scale, w = p.w*scale, h = p.h*scale;
+    const q = T(p.x, p.y, p.w, p.h), x = q.x, y = q.y, w = q.w, h = q.h;
     s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${hslColorFromString(p.material+p.name)}" fill-opacity="0.85" stroke="#0f172a" stroke-width="1"/>`;
     if(opts.showVeta && p.veta!=='ninguna' && w>26 && h>26){
-      const vertical = (p.veta==='largo') !== !!p.rotated;
+      const vertical = ((p.veta==='largo') !== !!p.rotated) !== R;
       s += vertical
         ? `<line x1="${x+7}" y1="${y+h*0.2}" x2="${x+7}" y2="${y+h*0.8}" stroke="#7c2d12" stroke-width="1.4" marker-end="url(#arr${uid2})"/>`
         : `<line x1="${x+w*0.2}" y1="${y+h-7}" x2="${x+w*0.8}" y2="${y+h-7}" stroke="#7c2d12" stroke-width="1.4" marker-end="url(#arr${uid2})"/>`;
     }
-    s += etiquetas(x,y,w,h,p.w,p.h, opts.showLabels ? `#${p.n} ${p.name}` : `#${p.n}`);
+    s += etiquetas(x,y,w,h, R ? p.h : p.w, R ? p.w : p.h, opts.showLabels ? `#${p.n} ${p.name}` : `#${p.n}`);
   });
 
   // Leyenda
@@ -1269,7 +1314,7 @@ function drawPlano(idx){
   });
   const container = $('planoContainer');
   container.innerHTML = out.svg;
-  container.querySelector('svg').style.transform = `scale(${STATE.zoom})`;
+  aplicarZoomSvg(container.querySelector('svg'));
   currentPlanData = { board:b.board, placed:b.placed, svgW:out.width, svgH:out.height };
 }
 
@@ -1307,6 +1352,14 @@ function hslColorFromString(str){
 // <<PLANO-END
 
 // <<PDF-START (sin DOM; se prueba por separado)
+/** Rectángulo punteado en PDF: cada trazo es una línea vectorial independiente (no depende del patrón de guiones del visor). */
+function rectPunteadoPdf(doc,x,y,w,h,rgb,lw,dash,gap){
+  doc.setDrawColor(...rgb); doc.setLineWidth(lw); doc.setLineDashPattern([],0);
+  if(doc.setLineCap) doc.setLineCap('butt');
+  if(doc.setLineJoin) doc.setLineJoin('miter');
+  segmentosRectPunteado(x,y,w,h,dash,gap,lw/2).forEach(g=>doc.line(g[0],g[1],g[2],g[3]));
+}
+
 function hslAArreglo(str){
   const m = String(str).match(/hsl\(([\d.]+),\s*([\d.]+)%,\s*([\d.]+)%\)/);
   if(!m) return [220,220,220];
@@ -1393,6 +1446,7 @@ function construirPdfOptimizacion(doc, result, ctx){
   const pw1 = doc.internal.pageSize.getWidth();
   doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(15,23,42);
   doc.text('OPTIMIZACIÓN DE CORTE DE TABLEROS', 12, 16);
+  doc.setTextColor(35,88,230); doc.text('CUTFIX PRO', pw1-12, 16, {align:'right'}); doc.setTextColor(15,23,42);
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(51,65,85);
   doc.text(`Fecha de generación: ${ctx.fecha}   |   Proyecto: ${ctx.proyecto}   |   Método: ${ctx.modo}`, 12, 23);
   doc.text(`Corte de sierra (kerf): ${kerf} mm   |   Margen perimetral: ${nf(P.margenPer + P.margenSeg)} mm`, 12, 28);
@@ -1486,27 +1540,36 @@ function construirPdfOptimizacion(doc, result, ctx){
   const muebTxt = textoMuebles();
   boards.forEach((b,idx)=>{
     const board = b.board, info = infoTablero(boards, idx, result.unplaced);
-    doc.addPage('a4','landscape');
+    doc.addPage('a4', STATE.orientacion==='vertical' ? 'portrait' : 'landscape');   // la hoja sigue la orientación elegida
     const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
     const W = board.ancho, H = board.largo, m = margenTablero(board);
-    const R = H >= W;                                   // girar si el largo es mayor que el ancho
+    const R = giroActivo(board);                         // giro visual elegido por el usuario (horizontal / vertical)
     const piezas = b.placed.map((p,i)=>({...p, n:i+1}));
     const area = piezas.reduce((s2,p)=>s2+p.w*p.h,0), aprov = (W*H)? area/(W*H)*100 : 0;
     const rgbMat = hslAArreglo(hslColorFromString(board.material));
 
-    // Encabezado
-    doc.setFillColor(...rgbMat); doc.rect(0,0,pw,28,'F');
+    // Encabezado (el texto se ajusta al ancho de la hoja, horizontal o vertical)
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+    const hl = [
+      ...doc.splitTextToSize(`Tablero ${info.secMat} de ${info.totMat} de este material | Medidas: ${nf(W)} x ${nf(H)} mm (ancho x largo) | Kerf: ${kerf} mm | Margen: ${nf(m)} mm | Veta: ${textoVeta(board.veta)} | Orientación: ${pw<ph?'vertical':'horizontal'}${R?' | Dibujo girado 90 grados':''}`, pw-20),
+      ...doc.splitTextToSize(`${piezas.length} piezas | Aprovechamiento ${aprov.toFixed(1)}% | Sobrante ${(100-aprov).toFixed(1)}% (${((W*H-area)/1e6).toFixed(2)} m2)`, pw-20)
+    ];
+    let muebL = [];
+    if(muebTxt){ doc.setFont('helvetica','bold'); muebL = doc.splitTextToSize(muebTxt, pw-20).slice(0,2); doc.setFont('helvetica','normal'); }
+    const hBand = Math.max(28, 14 + (hl.length+muebL.length)*4.7 + 2);
+    doc.setFillColor(...rgbMat); doc.rect(0,0,pw,hBand,'F');
     doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(15,23,42);
     doc.text(`Tablero ${info.numero} de ${info.total} - ${board.material} - espesor ${nf(board.espesor)} mm`, 10, 8);
-    doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
-    doc.text(`Tablero ${info.secMat} de ${info.totMat} de este material | Medidas: ${nf(W)} x ${nf(H)} mm (ancho x largo) | Kerf: ${kerf} mm | Margen: ${nf(m)} mm | Veta: ${textoVeta(board.veta)}${R?' | Dibujo girado 90 grados':''}`, 10, 14);
-    doc.text(`${piezas.length} piezas | Aprovechamiento ${aprov.toFixed(1)}% | Sobrante ${(100-aprov).toFixed(1)}% (${((W*H-area)/1e6).toFixed(2)} m2)`, 10, 19);
-    if(muebTxt){ doc.setFont('helvetica','bold'); doc.setTextColor(30,64,175); doc.text(doc.splitTextToSize(muebTxt, pw-20)[0], 10, 24.5); doc.setTextColor(15,23,42); }
+    doc.setFontSize(9); doc.setTextColor(35,88,230); doc.text('CUTFIX PRO', pw-10, 8, {align:'right'});
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(15,23,42);
+    let yh = 14;
+    hl.forEach(t=>{ doc.text(t, 10, yh); yh += 4.7; });
+    if(muebL.length){ doc.setFont('helvetica','bold'); doc.setTextColor(30,64,175); muebL.forEach(t=>{ doc.text(t, 10, yh); yh += 4.7; }); doc.setTextColor(15,23,42); }
 
     // Leyenda en 1, 2 o 3 columnas según cuántos cortes distintos haya
     const leyenda = agruparLeyenda(piezas, info.totales);
     const sobrantes = calcularSobrantes(board, b.placed);
-    const ncol = leyenda.length<=5 ? 1 : leyenda.length<=10 ? 2 : 3;
+    const ncol = Math.min(leyenda.length<=5 ? 1 : leyenda.length<=10 ? 2 : 3, pw<ph ? 2 : 3);
     const porCol = Math.ceil(leyenda.length/ncol);
     const legH = 15 + porCol*5.4;
     doc.setFont('helvetica','bold'); doc.setFontSize(7);
@@ -1514,7 +1577,7 @@ function construirPdfOptimizacion(doc, result, ctx){
     const sobH = sobTxt.length ? sobTxt.length*3.1 + 3 : 0;
 
     // Zona de dibujo (el tablero ocupa el ancho de la hoja)
-    const x0 = 26, y0 = 40;
+    const x0 = 26, y0 = hBand + 12;
     const availW = pw - x0 - 12, availH = ph - y0 - 24 - legH - sobH;
     const BW = R ? H : W, BH = R ? W : H;               // tamaño visible del tablero en la hoja
     const sc = Math.min(availW/BW, availH/BH);
@@ -1533,13 +1596,12 @@ function construirPdfOptimizacion(doc, result, ctx){
     doc.setFillColor(241,245,249); doc.setDrawColor(51,65,85); doc.setLineWidth(0.5);
     doc.rect(bx, by, bw, bh, 'FD');
     const mr = T(m, m, W-2*m, H-2*m);
-    doc.setDrawColor(148,163,184); doc.setLineWidth(0.15); doc.setLineDashPattern([1,1],0);
-    doc.rect(mr.x, mr.y, mr.w, mr.h); doc.setLineDashPattern([],0);
+    rectPunteadoPdf(doc, mr.x, mr.y, mr.w, mr.h, [148,163,184], 0.2, 2.2, 1.6);   // punteado vectorial, separación uniforme
 
     // Kerf (franjas rojas) bajo las piezas
     doc.setFillColor(239,68,68);
     piezas.forEach(p=>{
-      [T(p.x+p.w, p.y, kerf, p.h+kerf), T(p.x, p.y+p.h, p.w+kerf, kerf)].forEach(r=>{
+      [T(p.x+p.w, p.y, kerf, p.h+kerf), T(p.x, p.y+p.h, p.w, kerf)].forEach(r=>{
         doc.rect(r.x, r.y, Math.max(r.w,0.3), Math.max(r.h,0.3), 'F');
       });
     });
@@ -1575,8 +1637,8 @@ function construirPdfOptimizacion(doc, result, ctx){
     // Sobrantes (como otro tablero: verde punteado)
     sobrantes.forEach((sb,i)=>{
       const r = T(sb.x, sb.y, sb.w, sb.h);
-      doc.setFillColor(220,252,231); doc.setDrawColor(22,163,74); doc.setLineWidth(0.4); doc.setLineDashPattern([2,1.2],0);
-      doc.rect(r.x, r.y, r.w, r.h, 'FD'); doc.setLineDashPattern([],0);
+      doc.setFillColor(220,252,231); doc.rect(r.x, r.y, r.w, r.h, 'F');
+      rectPunteadoPdf(doc, r.x, r.y, r.w, r.h, [22,163,74], 0.35, 3, 2);            // punteado vectorial, separación uniforme
       etiquetasPdf(r, R ? sb.h : sb.w, R ? sb.w : sb.h, `S${i+1} SOBRANTE`);
     });
 
@@ -1607,7 +1669,8 @@ function construirPdfOptimizacion(doc, result, ctx){
       });
     }
     doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(71,85,105);
-    doc.text('Aquí = piezas de ese corte en este tablero. Se ocupan = total de ese corte en todo el trabajo. Franja roja = separación de sierra (' + kerf + ' mm). S1, S2… = sobrantes (verde: todo el espacio libre, medida ya sin kerf ni margen).', 12, ph-10.5);
+    const nota = doc.splitTextToSize('Aquí = piezas de ese corte en este tablero. Se ocupan = total de ese corte en todo el trabajo. Franja roja = separación de sierra (' + kerf + ' mm). S1, S2… = sobrantes (verde: todo el espacio libre, medida ya sin kerf ni margen).', pw-24);
+    doc.text(nota, 12, ph-9.5-(nota.length-1)*3);
   });
 
   // Pie de página
@@ -1617,7 +1680,7 @@ function construirPdfOptimizacion(doc, result, ctx){
     const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
     doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(100,116,139);
     doc.text(`Página ${i} de ${n}`, pw-12, ph-6, {align:'right'});
-    doc.text(`Optimización de corte - ${ctx.fecha}`, 12, ph-6);
+    doc.text(`CUTFIX PRO - Optimización de corte - ${ctx.fecha}`, 12, ph-6);
   }
 }
 // <<PDF-END
@@ -1639,7 +1702,7 @@ $('btnPdfOptim').onclick = ()=>{
       modo: (r.mode || 'mixto')
     });
     const pad = n=>String(n).padStart(2,'0');
-    doc.save(`optimizacion_corte_${ahora.getFullYear()}${pad(ahora.getMonth()+1)}${pad(ahora.getDate())}.pdf`);
+    doc.save(`cutfix-pro_optimizacion_${ahora.getFullYear()}${pad(ahora.getMonth()+1)}${pad(ahora.getDate())}.pdf`);
     toast('PDF de optimización generado','success');
   }catch(e){
     console.error(e);
@@ -1663,6 +1726,7 @@ $('btnGenHoja').onclick = ()=>{
     const div = document.createElement('div');
     div.className = 'hoja-doc';
     div.innerHTML = `
+      <div class="hoja-brand">CUTFIX<span>PRO</span></div>
       <h2>Hoja de corte — Tablero ${idx+1}</h2>
       <div class="hoja-meta">
         <div class="row"><span>Proyecto:</span><b>${escapeHtml(proyecto)}</b></div>
@@ -1703,7 +1767,7 @@ $('btnGenHoja').onclick = ()=>{
       $('selTableroPlano').value = idx;
       drawPlano(idx);
       const svg = $('planoContainer').querySelector('svg').cloneNode(true);
-      svg.style.transform = 'none';
+      svg.removeAttribute('style');
       target.appendChild(svg);
       $('selTableroPlano').value = prevIdx;
     });
@@ -1727,7 +1791,7 @@ function renderSobrantes(){
     tr.innerHTML = `
       <td>${s.largo}</td><td>${s.ancho}</td><td>${s.espesor}</td>
       <td>${s.material}</td><td>${s.veta}</td><td>${escapeHtml(s.origen||'')}</td>
-      <td><button class="icon-btn del" data-del="${i}">🗑</button></td>`;
+      <td><button class="icon-btn del" data-del="${i}">${ico('delete')}</button></td>`;
     tbody.appendChild(tr);
   });
   tbody.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
@@ -2099,41 +2163,44 @@ $('btnPdfPlano').onclick = ()=>{
   if(!STATE.bestResult){ toast('Ejecuta primero la optimización','error'); return; }
   try{
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
+    const pagina = STATE.orientacion==='vertical' ? 'portrait' : 'landscape';
+    const doc = new jsPDF({orientation:pagina, unit:'mm', format:'a4'});
     STATE.bestResult.boards.forEach((b,i)=>{
-      if(i>0) doc.addPage();
-      doc.setFontSize(14);
+      if(i>0) doc.addPage('a4', pagina);
+      const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
+      doc.setFontSize(14); doc.setTextColor(15,23,42);
       doc.text(`Tablero ${i+1} — ${b.board.nombre}`, 10, 12);
       doc.setFontSize(10);
-      doc.text(`Material: ${b.board.material} · ${b.board.ancho}×${b.board.largo} mm · Kerf: ${STATE.params.kerf} mm`, 10, 18);
-      // Dibujar rectángulos
-      const pageW = 280, pageH = 180;
+      doc.text(doc.splitTextToSize(`Material: ${b.board.material} · ${b.board.ancho}×${b.board.largo} mm · Kerf: ${STATE.params.kerf} mm`, pageW-20), 10, 18);
+      doc.setFont('helvetica','bold'); doc.setTextColor(35,88,230); doc.text('CUTFIX PRO', pageW-10, 12, {align:'right'});
+      doc.setFont('helvetica','normal'); doc.setTextColor(15,23,42);
+      // Dibujo con el giro elegido (visual): ancho<->largo y eje invertido, igual que la vista previa
+      const W = b.board.ancho, H = b.board.largo, R = giroActivo(b.board);
+      const BW = R ? H : W, BH = R ? W : H;
       const padX = 15, padY = 25;
-      const availW = pageW - padX*2;
-      const availH = pageH - padY - 15;
-      const scale = Math.min(availW/b.board.ancho, availH/b.board.largo);
-      // Fondo
+      const availW = pageW - padX*2, availH = pageH - padY - 15;
+      const scale = Math.min(availW/BW, availH/BH);
+      const T = (x,y,w,h)=> R ? {x:padX+y*scale, y:padY+(W-x-w)*scale, w:h*scale, h:w*scale} : {x:padX+x*scale, y:padY+y*scale, w:w*scale, h:h*scale};
       doc.setDrawColor(50,50,50);
       doc.setFillColor(245,245,245);
-      doc.rect(padX, padY, b.board.ancho*scale, b.board.largo*scale, 'FD');
+      doc.rect(padX, padY, BW*scale, BH*scale, 'FD');
       b.placed.forEach((p,j)=>{
-        const x = padX + p.x*scale;
-        const y = padY + p.y*scale;
+        const r = T(p.x, p.y, p.w, p.h);
         doc.setDrawColor(0,0,0);
         const c = hslToRgb(p.material+p.name);
         doc.setFillColor(c.r,c.g,c.b);
-        doc.rect(x, y, p.w*scale, p.h*scale, 'FD');
-        if(p.w*scale > 15 && p.h*scale > 8){
+        doc.rect(r.x, r.y, r.w, r.h, 'FD');
+        if(r.w > 15 && r.h > 8){
           doc.setFontSize(7);
-          doc.text(p.name.substring(0,16), x+1, y+4);
-          doc.text(`${Math.round(p.w)}×${Math.round(p.h)}`, x+1, y+8);
+          doc.text(p.name.substring(0,16), r.x+1, r.y+4);
+          doc.text(`${Math.round(R?p.h:p.w)}×${Math.round(R?p.w:p.h)}`, r.x+1, r.y+8);
         } else {
           doc.setFontSize(6);
-          doc.text(String(j+1), x+1, y+3);
+          doc.text(String(j+1), r.x+1, r.y+3);
         }
       });
     });
-    doc.save('planos_corte.pdf');
+    doc.save('cutfix-pro_planos_corte.pdf');
     toast('PDF generado','success');
   }catch(e){
     console.error(e);
@@ -2195,7 +2262,7 @@ function renderHabilitados(){
       <td>${fmt(porMueble,2).replace(/\.?0+$/,'')}</td>
       <td><input type="number" min="0" step="1" value="${h.muebles}" data-mue="${h.id}" style="width:80px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></td>
       <td><b id="habTot_${h.id}">${totalPiezasHab(h)}</b></td>
-      <td class="actions"><button class="icon-btn" data-ren="${h.id}" title="Renombrar">✏️</button><button class="icon-btn del" data-delhab="${h.id}" title="Eliminar habilitado">🗑</button></td>`;
+      <td class="actions"><button class="icon-btn" data-ren="${h.id}" title="Renombrar">${ico('edit')}</button><button class="icon-btn del" data-delhab="${h.id}" title="Eliminar habilitado">${ico('delete')}</button></td>`;
     tr.style.opacity = h.incluir ? '1' : '.55';
     tb.appendChild(tr);
   });
@@ -2361,6 +2428,41 @@ function init(){
     renderTableros();
   }
 }
+
+/* =========================================================
+   CAPA DE INTERFAZ (solo presentación: navegación, menú móvil y giro visual)
+   No modifica datos ni cálculos.
+   ========================================================= */
+const TITULOS = {inicio:'Inicio', tableros:'Tableros', piezas:'Piezas', importar:'Importar Excel', habilitados:'Habilitados',
+  parametros:'Parámetros', optimizacion:'Optimización', planos:'Planos de corte', hoja:'Hoja de corte', sobrantes:'Sobrantes', reportes:'Reportes'};
+function irSeccion(k){ const b = document.querySelector(`.nav-btn[data-section="${k}"]`); if(b) b.click(); }
+document.querySelectorAll('.nav-btn').forEach(btn=>btn.addEventListener('click', ()=>{
+  const k = btn.dataset.section;
+  $('appbarTitle').textContent = TITULOS[k] || k;
+  document.querySelectorAll('.bn-btn[data-go]').forEach(b=>b.classList.toggle('active', b.dataset.go===k));
+  $('bnMore').classList.toggle('active', !document.querySelector(`.bn-btn[data-go="${k}"]`));
+  window.scrollTo({top:0, behavior:'smooth'});
+  if(k==='planos') requestAnimationFrame(()=>aplicarZoomSvg($('planoContainer').querySelector('svg')));
+}));
+document.querySelectorAll('[data-go]').forEach(el=>el.addEventListener('click', ()=>irSeccion(el.dataset.go)));
+$('bnMore').onclick = ()=> $('sidebar').classList.add('open');
+$('scrim').onclick = ()=> $('sidebar').classList.remove('open');
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') $('sidebar').classList.remove('open'); });
+let _rsz; window.addEventListener('resize', ()=>{ clearTimeout(_rsz); _rsz = setTimeout(()=>aplicarZoomSvg($('planoContainer').querySelector('svg')), 120); });
+
+/** Giro visual del tablero (90°): solo redibuja la vista previa; NO recalcula ni altera la distribución. */
+function actualizarEtiquetaGiro(){
+  const v = STATE.orientacion === 'vertical';
+  $('orientBadge').innerHTML = ico(v ? 'vert' : 'horiz') + '<span id="orientLabel">' + (v ? 'Vertical' : 'Horizontal') + '</span>';
+}
+$('btnGirar').onclick = ()=>{
+  STATE.orientacion = STATE.orientacion === 'vertical' ? 'horizontal' : 'vertical';
+  actualizarEtiquetaGiro();
+  if(STATE.bestResult && STATE.bestResult.boards.length) drawPlano(+$('selTableroPlano').value || 0);
+  toast('Tablero en orientación ' + STATE.orientacion + ' (el PDF usará esta orientación)');
+};
+actualizarEtiquetaGiro();
+
 document.addEventListener('DOMContentLoaded', init);
 
 /* =========================================================
