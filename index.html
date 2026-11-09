@@ -218,6 +218,35 @@
     <p>Sube un archivo .xlsx o .xls y mapea las columnas automáticamente.</p>
   </header>
 
+  <div class="card" id="loteCard">
+    <h3>Importación múltiple de habilitados</h3>
+    <div class="hint">Selecciona varios archivos Excel de una sola vez (Ctrl o Shift en el explorador de Windows). Después captura la cantidad de muebles de cada habilitado en la lista y confirma todo junto.</div>
+    <div class="form-actions"><button class="btn btn-primary" id="btnLoteElegir"><svg class="ico" aria-hidden="true"><use href="#i-upload"/></svg><span>Seleccionar varios archivos…</span></button></div>
+    <input type="file" id="loteFiles" accept=".xlsx,.xls" multiple style="display:none">
+    <div id="loteBody" style="display:none">
+      <div class="form-grid">
+        <label>Unidades que entran a optimización (separadas por coma)
+          <input type="text" id="loteUnidades" value="HOJA"></label>
+        <label>Unidad de medida de los Excel
+          <select id="loteUnidadMedida"><option value="10" selected>Centímetros (cm)</option><option value="1">Milímetros (mm)</option></select></label>
+        <label>Veta de piezas sin dato de veta
+          <select id="loteVeta"><option value="largo" selected>A lo largo del tablero (respetar sentido)</option><option value="ancho">A lo ancho del tablero</option><option value="ninguna">Sin restricción (permite girar)</option></select></label>
+      </div>
+      <div class="table-wrap" style="max-height:420px">
+        <table class="data-table" id="tablaLote">
+          <thead><tr><th>#</th><th>Habilitado</th><th>Archivo</th><th>Estado</th><th>Piezas por mueble</th><th>Cantidad de muebles</th><th>Total de piezas</th><th>Quitar</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="hint" id="loteResumen"></div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="btnLoteConfirmar"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span>Importar habilitados</span></button>
+        <button class="btn btn-outline" id="btnLoteMas"><svg class="ico" aria-hidden="true"><use href="#i-upload"/></svg><span>Agregar más archivos</span></button>
+        <button class="btn btn-outline" id="btnLoteLimpiar"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg><span>Vaciar lista</span></button>
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <h3>1. Selecciona el archivo</h3>
     <input type="file" id="excelFile" accept=".xlsx,.xls">
@@ -271,6 +300,7 @@
     <div class="table-toolbar">
       <h3>Habilitados registrados (<span id="countHab">0</span>)</h3>
       <div class="btn-group">
+        <button class="btn btn-sm btn-primary" id="btnHabAgregarVarios"><svg class="ico" aria-hidden="true"><use href="#i-upload"/></svg><span>Agregar habilitados (varios archivos)</span></button>
         <button class="btn btn-sm btn-outline" id="btnHabTodos"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span>Juntar todos</span></button>
         <button class="btn btn-sm btn-outline" id="btnHabNinguno"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg><span>Quitar todos</span></button>
       </div>
@@ -330,6 +360,14 @@
 
   <div class="card">
     <div class="hint" id="optResumenEntrada" style="margin-bottom:12px"></div>
+    <div class="form-grid" style="margin-bottom:12px">
+      <label><b>Nombre de las piezas en los planos</b> (antes de generar los planos de corte)
+        <select id="prNombreGuion">
+          <option value="true">SÍ: UTILIZAR NOMBRE DESPUÉS DEL ÚLTIMO GUION</option>
+          <option value="false">NO: CONSERVAR EL NOMBRE ORIGINAL COMPLETO</option>
+        </select>
+      </label>
+    </div>
     <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">
       <button class="btn btn-outline btn-xl" id="btnOptLongitud"><svg class="ico" aria-hidden="true"><use href="#i-vert"/></svg><span>POR LONGITUD</span></button>
       <button class="btn btn-outline btn-xl" id="btnOptAnchura"><svg class="ico" aria-hidden="true"><use href="#i-horiz"/></svg><span>POR ANCHURA</span></button>
