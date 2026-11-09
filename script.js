@@ -10,7 +10,7 @@ const STATE = {
   piezas: [],
   habilitados: [],   // [{id, nombre, muebles, incluir, archivo}]
   sobrantes: [],
-  params: { kerf:3, tolPos:0, tolNeg:0, margenPer:10, sepMin:3, margenSeg:0, comp:0, rotGlobal:false, veta:true, criterio:'tableros' },
+  params: { kerf:3, tolPos:0, tolNeg:0, margenPer:10, sepMin:3, margenSeg:0, comp:0, rotGlobal:false, veta:true, criterio:'tableros', nombreGuion:true },
   lastResult: null,
   editTabId: null,
   editPiezaId: null,
@@ -253,13 +253,13 @@ function bindParams(){
   const map = {
     prKerf:'kerf', prTolPos:'tolPos', prTolNeg:'tolNeg', prMargenPer:'margenPer',
     prSepMin:'sepMin', prMargenSeg:'margenSeg', prComp:'comp',
-    prRotGlobal:'rotGlobal', prVeta:'veta', prCriterio:'criterio'
+    prRotGlobal:'rotGlobal', prVeta:'veta', prCriterio:'criterio', prNombreGuion:'nombreGuion'
   };
   Object.entries(map).forEach(([elId,key])=>{
     const el = $(elId);
     el.addEventListener('input', ()=>{
       let v = el.value;
-      if(['rotGlobal','veta'].includes(key)) v = (v==='true');
+      if(['rotGlobal','veta','nombreGuion'].includes(key)) v = (v==='true');
       else if(key!=='criterio') v = +v||0;
       STATE.params[key]=v; saveAuto();
     });
@@ -276,6 +276,7 @@ function loadParamsUI(){
   $('prRotGlobal').value=String(STATE.params.rotGlobal);
   $('prVeta').value=String(STATE.params.veta);
   $('prCriterio').value=STATE.params.criterio;
+  $('prNombreGuion').value=String(STATE.params.nombreGuion !== false);
 }
 
 /* =========================================================
@@ -304,8 +305,11 @@ function applyTolerance(p){
  * Expande piezas en unidades individuales por material+espesor.
  */
 /** Nombre de la pieza para los planos: lo que está después del ÚLTIMO guión ("IFD4221BFT - ENTREPAÑO" -> "ENTREPAÑO"). */
-function nombreCorto(n){
+function nombreCorto(n, cortar){
   const t = String(n==null ? '' : n).trim();
+  // SÍ (por defecto): recorta después del último guion. NO: conserva el nombre original completo.
+  if(cortar === undefined) cortar = !(typeof STATE !== 'undefined' && STATE.params && STATE.params.nombreGuion === false);
+  if(!cortar) return t;
   const i = t.lastIndexOf('-');
   const corto = i>=0 ? t.slice(i+1).trim() : t;
   return corto || t;
@@ -1031,6 +1035,9 @@ function ejecutarOptimizacion(estrategias){
   }, 60);
 }
 
+$('prNombreGuion').addEventListener('change', ()=>{
+  if(STATE.ultimasEstrategias){ calcularResultados(STATE.ultimasEstrategias); toast('Identificación de piezas actualizada en los planos','success'); }
+});
 $('btnRecalcular').onclick = ()=>{
   if(STATE.ultimasEstrategias){ calcularResultados(STATE.ultimasEstrategias); toast('Planos recalculados con los datos actuales','success'); }
 };
@@ -1613,6 +1620,28 @@ function textoPiezaPdf(doc, cands, pw, ph){
 }
 
 /**
+ * Firma del patrón de corte de un tablero: material, espesor, medidas, margen, veta, giro del dibujo y, para cada
+ * pieza, nombre, posición, medidas, giro y medida original. Dos tableros solo coinciden si TODO el acomodo es igual
+ * (no basta con tener las mismas piezas). Las piezas se ordenan para que el orden interno no importe.
+ */
+function firmaPatronTablero(b){
+  const bd = b.board, f = v=>Math.round((+v||0)*100)/100;
+  const piezas = b.placed.map(p=>[p.name, p.material, f(p.x), f(p.y), f(p.w), f(p.h), p.rotated?1:0, f(p.ow), f(p.oh), p.veta||''])
+    .sort((a,c)=> a[3]-c[3] || a[2]-c[2] || String(a[0]).localeCompare(String(c[0])) || a[4]-c[4] || a[5]-c[5]);
+  return JSON.stringify([bd.material, f(bd.espesor), f(bd.ancho), f(bd.largo), f(margenTablero(bd)), bd.veta||'', giroActivo(bd)?1:0, piezas]);
+}
+/** Agrupa los tableros con idéntico patrón, conservando el orden de la primera aparición: [{idxs:[0,1,2,3]}, {idxs:[4]}] */
+function agruparPatronesTablero(boards){
+  const grupos = [], porFirma = new Map();
+  boards.forEach((b,i)=>{
+    const k = firmaPatronTablero(b);
+    if(porFirma.has(k)) porFirma.get(k).idxs.push(i);
+    else { const g = {idxs:[i]}; porFirma.set(k,g); grupos.push(g); }
+  });
+  return grupos;
+}
+
+/**
  * Construye el PDF general de optimización en `doc` (jsPDF con autoTable).
  * result: resultado de optimización; ctx: {fecha, proyecto, modo}
  */
@@ -1633,7 +1662,7 @@ function construirPdfOptimizacion(doc, result, ctx){
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(51,65,85);
   doc.text(`Fecha de generación: ${ctx.fecha}   |   Proyecto: ${ctx.proyecto}   |   Método: ${ctx.modo}`, 12, 23);
   doc.text(`Corte de sierra (kerf): ${kerf} mm   |   Margen perimetral: ${nf(P.margenPer + P.margenSeg)} mm`, 12, 28);
-  doc.text(`Piezas: ${totCol} de ${totReq} colocadas   |   Tableros necesarios: ${totTab}   |   Aprovechamiento global: ${aT? (aP/aT*100).toFixed(1):'0.0'}%`, 12, 33);
+  doc.text(`Piezas: ${totCol} de ${totReq} colocadas   |   Tableros necesarios: ${totTab}   |   Patrones de corte distintos: ${agruparPatronesTablero(boards).length}   |   Aprovechamiento global: ${aT? (aP/aT*100).toFixed(1):'0.0'}%`, 12, 33);
   let yTab = 40;
   const habInc = (STATE.habilitados||[]).filter(h=>h.incluir && h.muebles>0);
   if(habInc.length){
@@ -1721,8 +1750,15 @@ function construirPdfOptimizacion(doc, result, ctx){
 
   // ---------- Una página por tablero: hoja HORIZONTAL y tablero girado 90° (largo en horizontal) ----------
   const muebTxt = textoMuebles();
-  boards.forEach((b,idx)=>{
+  // Una sola hoja por patrón de corte distinto; indica cuántos tableros se cortan con ese patrón
+  agruparPatronesTablero(boards).forEach(g=>{
+    const idx = g.idxs[0], b = boards[idx], N = g.idxs.length;
     const board = b.board, info = infoTablero(boards, idx, result.unplaced);
+    const mismosMat = boards.filter(x=>x.board.material===board.material && +x.board.espesor===+board.espesor);
+    const numsTxt = compactarNumeros(g.idxs.map(i=>i+1));
+    const secTxt  = compactarNumeros(g.idxs.map(i=>mismosMat.indexOf(boards[i])+1));
+    const lblNum = N>1 ? 'Tableros ' + (numsTxt.length<=34 ? numsTxt : `${idx+1}… (${N} iguales)`) : `Tablero ${info.numero}`;
+    const lblSec = N>1 ? 'Tableros ' + (secTxt.length<=34 ? secTxt : `${mismosMat.indexOf(b)+1}… (${N} iguales)`) : `Tablero ${info.secMat}`;
     doc.addPage('a4', STATE.orientacion==='vertical' ? 'portrait' : 'landscape');   // la hoja sigue la orientación elegida
     const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
     const W = board.ancho, H = board.largo, m = margenTablero(board);
@@ -1734,20 +1770,31 @@ function construirPdfOptimizacion(doc, result, ctx){
     // Encabezado (el texto se ajusta al ancho de la hoja, horizontal o vertical)
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
     const hl = [
-      ...doc.splitTextToSize(`Tablero ${info.secMat} de ${info.totMat} de este material | Medidas: ${nf(W)} x ${nf(H)} mm (ancho x largo) | Kerf: ${kerf} mm | Margen: ${nf(m)} mm | Veta: ${textoVeta(board.veta)} | Orientación: ${pw<ph?'vertical':'horizontal'}${R?' | Dibujo girado 90 grados':''}`, pw-20),
+      ...doc.splitTextToSize(`${lblSec} de ${info.totMat} de este material | Medidas: ${nf(W)} x ${nf(H)} mm (ancho x largo) | Kerf: ${kerf} mm | Margen: ${nf(m)} mm | Veta: ${textoVeta(board.veta)} | Orientación: ${pw<ph?'vertical':'horizontal'}${R?' | Dibujo girado 90 grados':''}`, pw-20),
       ...doc.splitTextToSize(`${piezas.length} piezas | Aprovechamiento ${aprov.toFixed(1)}% | Sobrante ${(100-aprov).toFixed(1)}% (${((W*H-area)/1e6).toFixed(2)} m2)`, pw-20)
     ];
     let muebL = [];
     if(muebTxt){ doc.setFont('helvetica','bold'); muebL = doc.splitTextToSize(muebTxt, pw-20).slice(0,2); doc.setFont('helvetica','normal'); }
-    const hBand = Math.max(28, 14 + (hl.length+muebL.length)*4.7 + 2);
+    const hBand = Math.max(28, 14 + (hl.length+muebL.length)*4.7 + 2 + 6);   // +6: renglón CANTIDAD DE TABLEROS
     doc.setFillColor(...rgbMat); doc.rect(0,0,pw,hBand,'F');
     doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(15,23,42);
-    doc.text(`Tablero ${info.numero} de ${info.total} - ${board.material} - espesor ${nf(board.espesor)} mm`, 10, 8);
+    doc.text(`${lblNum} de ${info.total} - ${board.material} - espesor ${nf(board.espesor)} mm`, 10, 8);
     doc.setFontSize(9); doc.setTextColor(35,88,230); doc.text('CUTFIX PRO', pw-10, 8, {align:'right'});
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(15,23,42);
     let yh = 14;
     hl.forEach(t=>{ doc.text(t, 10, yh); yh += 4.7; });
     if(muebL.length){ doc.setFont('helvetica','bold'); doc.setTextColor(30,64,175); muebL.forEach(t=>{ doc.text(t, 10, yh); yh += 4.7; }); doc.setTextColor(15,23,42); }
+
+    // CANTIDAD DE TABLEROS que se cortan con este patrón
+    {
+      const insignia = `CANTIDAD DE TABLEROS: ${N}`;
+      doc.setFont('helvetica','bold'); doc.setFontSize(10);
+      const bwid = doc.getTextWidth(insignia) + 6;
+      doc.setFillColor(30,64,175); doc.roundedRect(10, yh-3.3, bwid, 6.4, 1.2, 1.2, 'F');
+      doc.setTextColor(255,255,255); doc.text(insignia, 13, yh+1.2);
+      if(N>1){ doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(15,23,42); doc.text(`Mismo patrón de corte en los tableros ${numsTxt.length<=60 ? numsTxt : N+' (ver lista general)'}`, 10+bwid+3, yh+1.2); }
+      doc.setTextColor(15,23,42);
+    }
 
     // Leyenda en 1, 2 o 3 columnas según cuántos cortes distintos haya
     const leyenda = agruparLeyenda(piezas, info.totales);
@@ -1852,7 +1899,7 @@ function construirPdfOptimizacion(doc, result, ctx){
       });
     }
     doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(71,85,105);
-    const nota = doc.splitTextToSize('Aquí = piezas de ese corte en este tablero. Se ocupan = total de ese corte en todo el trabajo. Franja roja = separación de sierra (' + kerf + ' mm). S1, S2… = sobrantes (verde: todo el espacio libre, medida ya sin kerf ni margen).', pw-24);
+    const nota = doc.splitTextToSize('Aquí = piezas de ese corte en ' + (N>1 ? `cada uno de los ${N} tableros de este patrón` : 'este tablero') + '. Se ocupan = total de ese corte en todo el trabajo. Franja roja = separación de sierra (' + kerf + ' mm). S1, S2… = sobrantes (verde: todo el espacio libre, medida ya sin kerf ni margen).', pw-24);
     doc.text(nota, 12, ph-9.5-(nota.length-1)*3);
   });
 
@@ -2295,6 +2342,154 @@ $('btnConfirmImport').onclick = ()=>{
   if(count===0 && dup>0) toast('Ese archivo ya estaba importado: cambia su cantidad de muebles en Habilitados (no se duplicó nada).','error');
   else toast(msg + (count>0 ? ` · habilitado "${hab.nombre}" × ${hab.muebles} mueble(s)` : ''), errores?'error':'success');
   if(count>0 || dup>0) document.querySelector('.nav-btn[data-section="habilitados"]').click();
+};
+
+/* =========================================================
+   IMPORTACIÓN MÚLTIPLE DE HABILITADOS
+   Varios Excel de una sola vez; la cantidad de muebles se captura por archivo en una tabla y todo se
+   confirma junto. Reutiliza detectarColumna() y procesarFilasExcel() (mismos cálculos que la importación individual).
+   ========================================================= */
+const LOTE = [];     // archivos pendientes de confirmar (no forma parte del proyecto guardado)
+
+function loteOpts(fileName){
+  return { unidades: $('loteUnidades').value.split(','), factor: +$('loteUnidadMedida').value || 1,
+           vetaDefault: $('loteVeta').value, fileName };
+}
+function loteProcesar(it){
+  if(!it.rows) return;
+  it.res = procesarFilasExcel(it.rows, it.map, loteOpts(it.file.name));
+  const ok = it.res.items.filter(x=>x.estado==='ok');
+  it.ok = ok.length;
+  it.ign = it.res.items.filter(x=>x.estado==='ignorada').length;
+  it.err = it.res.items.filter(x=>x.estado==='error').length;
+  it.porMueble = ok.reduce((n,x)=>n+x.cantidad,0);
+}
+function loteTotalPiezas(it){
+  const m = Math.floor(+it.muebles) || 0;
+  return (it.res ? it.res.items.filter(x=>x.estado==='ok') : []).reduce((n,x)=>n+Math.ceil(+(x.cantidad*m).toFixed(6)),0);
+}
+function loteResumen(){
+  const val = LOTE.filter(it=>it.ok>0), con = val.filter(it=>Math.floor(+it.muebles)>=1);
+  $('loteResumen').innerHTML = `<b>${LOTE.length}</b> archivo(s) en la lista · <b>${val.length}</b> con renglones válidos · cantidad de muebles capturada en <b>${con.length}</b> de ${val.length}` +
+    (val.length && con.length<val.length ? ' — <span style="color:#dc2626">captura la cantidad de cada habilitado para poder importar</span>' : '') +
+    ` · total de piezas: <b>${con.reduce((n,it)=>n+loteTotalPiezas(it),0)}</b>`;
+}
+function loteRender(){
+  $('loteBody').style.display = LOTE.length ? 'block' : 'none';
+  const tb = $('tablaLote').querySelector('tbody'); tb.innerHTML = '';
+  LOTE.forEach((it,i)=>{
+    const estado = it.error ? `❌ ${escapeHtml(it.error)}`
+      : it.ok ? `✅ ${it.ok} renglones` + (it.ign?` · ${it.ign} ignorados`:'') + (it.err?` · <span style="color:#dc2626">${it.err} con error</span>`:'')
+      : '❌ Sin renglones válidos (revisa unidades / columnas)';
+    const tr = document.createElement('tr'); tr.dataset.id = it.id;
+    tr.innerHTML = `<td>${i+1}</td>`+
+      `<td><input type="text" data-lnom="${it.id}" value="${escapeHtml(it.nombre)}"></td>`+
+      `<td>${escapeHtml(it.file.name)}</td><td>${estado}</td>`+
+      `<td>${it.ok ? +it.porMueble.toFixed(2) : '-'}</td>`+
+      `<td><input type="number" min="1" step="1" style="width:90px" data-lmue="${it.id}" value="${it.muebles}" placeholder="Cantidad"${it.ok?'':' disabled'}></td>`+
+      `<td class="lote-total">${it.ok && Math.floor(+it.muebles)>=1 ? loteTotalPiezas(it) : '-'}</td>`+
+      `<td><button class="btn btn-sm btn-outline" data-ldel="${it.id}" title="Quitar de la lista"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg></button></td>`;
+    tb.appendChild(tr);
+  });
+  loteResumen();
+}
+async function loteAgregar(files){
+  let nuevos = 0, repetidos = 0, yaImportados = 0, noExcel = 0;
+  for(const file of files){
+    if(!/\.(xlsx|xls)$/i.test(file.name)){ noExcel++; continue; }
+    if(LOTE.some(x=>x.file.name===file.name)){ repetidos++; continue; }                           // ya está en la lista
+    if(STATE.habilitados.some(h=>h.archivo===file.name)){ yaImportados++; continue; }             // ya fue importado
+    const it = {id:uid(), file, nombre:file.name.replace(/\.[^.]+$/,''), muebles:'', rows:null, map:null};
+    try{
+      const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), {type:'array'});
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, defval:'', raw:true});
+      if(rows.length < 2) it.error = 'Archivo vacío o sin datos';
+      else { it.rows = rows; it.map = {}; IMPORT_FIELDS.forEach(f=>{ it.map[f.key] = detectarColumna(rows[0], f); }); }
+    }catch(err){ console.error(err); it.error = 'No se pudo leer el archivo'; }
+    loteProcesar(it); LOTE.push(it); nuevos++;
+  }
+  loteRender();
+  const av = [];
+  if(repetidos) av.push(`${repetidos} ya estaba(n) en la lista`);
+  if(yaImportados) av.push(`${yaImportados} ya estaba(n) importado(s) como habilitado`);
+  if(noExcel) av.push(`${noExcel} no es(son) Excel`);
+  toast(`${nuevos} archivo(s) agregado(s) a la lista` + (av.length ? ' · omitidos: ' + av.join(', ') : '') + (nuevos ? ' · captura la cantidad de muebles de cada uno' : ''), av.length&&!nuevos ? 'error' : 'success');
+}
+
+$('btnLoteElegir').onclick = $('btnLoteMas').onclick = ()=> $('loteFiles').click();
+$('btnHabAgregarVarios').onclick = ()=> $('loteFiles').click();
+$('loteFiles').onchange = async (e)=>{
+  const files = [...e.target.files]; e.target.value = '';
+  if(!files.length) return;
+  document.querySelector('.nav-btn[data-section="importar"]').click();
+  await loteAgregar(files);
+};
+['loteUnidades','loteUnidadMedida','loteVeta'].forEach(id=> $(id).addEventListener('change', ()=>{ LOTE.forEach(loteProcesar); loteRender(); }));
+$('tablaLote').addEventListener('input', ev=>{
+  const t = ev.target;
+  if(t.dataset.lnom){ const it = LOTE.find(x=>x.id===t.dataset.lnom); if(it) it.nombre = t.value; }
+  if(t.dataset.lmue){
+    const it = LOTE.find(x=>x.id===t.dataset.lmue); if(!it) return;
+    it.muebles = t.value; t.style.outline = '';
+    t.closest('tr').querySelector('.lote-total').textContent = Math.floor(+it.muebles)>=1 ? loteTotalPiezas(it) : '-';
+    loteResumen();
+  }
+});
+$('tablaLote').addEventListener('click', ev=>{
+  const b = ev.target.closest('[data-ldel]'); if(!b) return;
+  const i = LOTE.findIndex(x=>x.id===b.dataset.ldel); if(i>=0) LOTE.splice(i,1);
+  loteRender();
+});
+$('btnLoteLimpiar').onclick = ()=>{ LOTE.length = 0; loteRender(); };
+$('btnLoteConfirmar').onclick = ()=>{
+  const validos = LOTE.filter(it=>it.ok>0);
+  if(!validos.length){ toast('No hay archivos con renglones válidos para importar','error'); return; }
+  const faltan = validos.filter(it=>!(Math.floor(+it.muebles)>=1));
+  if(faltan.length){
+    faltan.forEach(it=>{ const inp = $('tablaLote').querySelector(`[data-lmue="${it.id}"]`); if(inp) inp.style.outline = '2px solid #dc2626'; });
+    const first = $('tablaLote').querySelector(`[data-lmue="${faltan[0].id}"]`); if(first) first.focus();
+    toast(`Falta la cantidad de muebles en ${faltan.length} habilitado(s)`,'error'); return;
+  }
+  const existentes = new Set(STATE.piezas.map(p=>p.srcKey).filter(Boolean));
+  const combos = new Set();
+  let nHab = 0, nPiezas = 0, dup = 0, errores = 0;
+  validos.forEach(it=>{
+    const hab = { id: uid(), nombre: (it.nombre||'').trim() || it.file.name.replace(/\.[^.]+$/,''),
+                  muebles: Math.max(1, Math.floor(+it.muebles)), incluir: true, archivo: it.file.name };
+    let count = 0;
+    it.res.items.filter(x=>x.estado==='ok').forEach(x=>{
+      if(existentes.has(x.srcKey)){ dup++; return; }
+      existentes.add(x.srcKey);
+      STATE.piezas.push({
+        id: uid(), nombre: x.nombre, largo: x.largo, ancho: x.ancho,
+        cantidad: x.cantidad, espesor: x.espesor, material: x.material,
+        veta: x.veta, rot: x.veta==='ninguna', obs: '',
+        habId: hab.id,
+        unidad: x.unidad, tolAncho: x.tolAncho, tolLargo: x.tolLargo,
+        tolAnchoTxt: x.tolAnchoTxt, tolLargoTxt: x.tolLargoTxt, srcKey: x.srcKey
+      });
+      ensureOption('pMaterial', x.material); ensureOption('tMaterial', x.material);
+      combos.add(x.material+'|'+x.espesor);
+      count++;
+    });
+    errores += it.err;
+    if(count>0){ STATE.habilitados.push(hab); nHab++; nPiezas += count; }
+  });
+  let nuevosTab = 0;
+  combos.forEach(k=>{
+    const [mat, esp] = k.split('|'); const e = +esp;
+    if(!STATE.tableros.some(t=>t.material===mat && +t.espesor===e)){
+      STATE.tableros.push({id:uid(), nombre:`${mat} (auto)`, material:mat, largo:2440, ancho:1220,
+        espesor:e, precio:0, color:'#c8a878', veta:'largo', cantidad:50, margen:0});
+      nuevosTab++;
+    }
+  });
+  const omitidos = LOTE.length - validos.length;
+  LOTE.length = 0; loteRender();
+  renderPiezas(); renderTableros(); renderHabilitados();
+  if(typeof saveAuto === 'function') saveAuto();
+  toast(`${nHab} habilitado(s) importado(s) · ${nPiezas} renglones` + (dup?` · ${dup} ya existían`:'') + (errores?` · ${errores} con error`:'') + (omitidos?` · ${omitidos} archivo(s) omitido(s) sin renglones válidos`:'') + (nuevosTab?` · ${nuevosTab} tableros 2440×1220 creados`:''), errores?'error':'success');
+  if(nHab>0 || dup>0) document.querySelector('.nav-btn[data-section="habilitados"]').click();
 };
 
 /* =========================================================
