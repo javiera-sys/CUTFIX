@@ -325,7 +325,7 @@
 <section id="sec-optimizacion" class="section">
   <header class="sec-header">
     <h2>Optimización</h2>
-    <p>Elige el método de corte: por longitud, por anchura u óptimo (compara todos).</p>
+    <p>Elige el método de corte: por longitud, por anchura, mixto (largo + ancho) u óptimo (compara todos).</p>
   </header>
 
   <div class="card">
@@ -333,9 +333,10 @@
     <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">
       <button class="btn btn-outline btn-xl" id="btnOptLongitud"><svg class="ico" aria-hidden="true"><use href="#i-vert"/></svg><span>POR LONGITUD</span></button>
       <button class="btn btn-outline btn-xl" id="btnOptAnchura"><svg class="ico" aria-hidden="true"><use href="#i-horiz"/></svg><span>POR ANCHURA</span></button>
+      <button class="btn btn-outline btn-xl" id="btnOptMixtoLA"><svg class="ico" aria-hidden="true"><use href="#i-puzzle"/></svg><span>MIXTO (LARGO + ANCHO)</span></button>
       <button class="btn btn-primary btn-xl" id="btnOptimize"><svg class="ico" aria-hidden="true"><use href="#i-bolt"/></svg><span>ÓPTIMO</span></button>
     </div>
-    <div class="hint"><b>Por longitud:</b> primero cortes paralelos al largo del tablero (franjas largas; las piezas se apilan dentro de cada franja). <b>Por anchura:</b> primero cortes a lo ancho (franjas transversales; las piezas van lado a lado). <b>Óptimo:</b> compara ambos y los demás métodos y elige el mejor según el criterio de prioridad de Parámetros. En todos se respeta la veta del tablero y de la pieza si "Respetar veta siempre" está en Sí.</div>
+    <div class="hint"><b>Por longitud:</b> primero cortes paralelos al largo del tablero (franjas largas; las piezas se apilan dentro de cada franja). <b>Por anchura:</b> primero cortes a lo ancho (franjas transversales; las piezas van lado a lado). <b>Mixto (Largo + Ancho):</b> primero forma franjas a lo largo con piezas del mismo ancho y después aprovecha los sobrantes colocando piezas transversalmente. <b>Óptimo:</b> compara ambos y los demás métodos y elige el mejor según el criterio de prioridad de Parámetros. En todos se respeta la veta del tablero y de la pieza si "Respetar veta siempre" está en Sí.</div>
     <div id="optProgress" class="progress-bar" style="display:none"><div></div></div>
   </div>
 
