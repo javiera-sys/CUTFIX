@@ -647,6 +647,186 @@ function optimizeMixed(pieces, board){
 function usedArea(placed){ return placed.reduce((s,p)=>s+p.w*p.h, 0); }
 
 /* =========================================================
+   MODO 4: MIXTO (LARGO + ANCHO)
+   ========================================================= */
+/**
+ * Estrategia en dos fases por tablero (no modifica ningún otro método):
+ *  FASE 1 (prioridad: LARGO): forma franjas a lo largo del tablero con piezas que comparten la misma
+ *    medida transversal (mismo ancho). Elige primero las franjas que mejor llenan la longitud
+ *    (voraz + mochila 1D para refinar). Solo confirma franjas con llenado >= minFill.
+ *  FASE 2 (prioridad: ANCHO / sobrantes): con todos los espacios libres reales (restos al final de cada
+ *    franja + columna sobrante) coloca las piezas restantes en cualquier orientación permitida
+ *    (incluida la transversal), mejor-ajuste con cortes de guillotina y kerf.
+ * Se prueban varias combinaciones (umbral de llenado x orden de piezas) y se conserva la que
+ * coloca más área en el tablero (desempate: menos cortes).
+ * Reutiliza: orientaciones() (rotación + veta), margenTablero(), STATE.params.kerf y el formato
+ * de salida {placed, unplaced, freeRegions, cuts} de los demás optimizadores.
+ */
+function optimizeLargoAncho(pieces, board){
+  const m = margenTablero(board), kerf = STATE.params.kerf, EPS = 0.01;
+  const Ltot = board.largo - 2*m;      // eje largo (y): sentido de las franjas
+  const Ctot = board.ancho - 2*m;      // eje ancho (x): sentido transversal
+
+  const noCaben = [], items = [];
+  pieces.forEach(p=>{
+    const os = orientaciones(p, board).filter(o=> o.h <= Ltot+EPS && o.w <= Ctot+EPS);
+    if(os.length) items.push({p, os}); else noCaben.push(p);
+  });
+
+  // ---- 1D: qué piezas forman una franja a lo largo (prefiere el mismo ancho; admite más angostas) ----
+  // Cada candidato = {it, o} con una sola orientación por pieza. Valor = área; peso = largo + kerf.
+  function llenarFranja(cands, c){
+    const ord = cands.slice().sort((a,b)=> b.o.w - a.o.w || b.o.h - a.o.h);
+    const sel = []; let usedL = 0, areaP = 0;
+    for(const k of ord){
+      const need = usedL + (sel.length ? kerf : 0) + k.o.h;
+      if(need <= Ltot+EPS){ sel.push(k); usedL = need; areaP += k.o.w*k.o.h; }
+    }
+    return {sel, usedL, areaP, ord, c};
+  }
+  function mejorarFranja(r){
+    const ord = r.ord, n = ord.length;
+    if(n < 2 || n > 400 || r.usedL >= Ltot-EPS) return r;
+    const cap = Math.floor(Ltot + kerf + EPS), W = cap+1;
+    const wts = ord.map(k=> Math.ceil(k.o.h + kerf - 1e-9));   // redondeo hacia arriba: nunca excede
+    const dp = new Float64Array(W), take = new Uint8Array(n*W);
+    for(let i=0;i<n;i++){
+      const wi = wts[i], vi = ord[i].o.w*ord[i].o.h;
+      for(let w=cap; w>=wi; w--){
+        const v = dp[w-wi] + vi;
+        if(v > dp[w] + 1e-6){ dp[w] = v; take[i*W+w] = 1; }
+      }
+    }
+    let w = cap; const sel = [];
+    for(let i=n-1;i>=0;i--){ if(take[i*W+w]){ sel.push(ord[i]); w -= wts[i]; } }
+    if(!sel.length) return r;
+    const areaP = sel.reduce((s,k)=>s+k.o.w*k.o.h,0);
+    const usedL = sel.reduce((s,k)=>s+k.o.h,0) + (sel.length-1)*kerf;
+    return (areaP > r.areaP + 1e-6 && usedL <= Ltot+EPS) ? {sel, usedL, areaP, ord, c:r.c} : r;
+  }
+  const llenado = r => r.areaP / (Ltot * r.c);
+  const mejorQue = (a,b)=>{            // ¿franja a mejor que b? (llenado en pasos de 2%, luego área colocada)
+    const ka = Math.round(llenado(a)*50), kb = Math.round(llenado(b)*50);
+    return ka!==kb ? ka>kb : a.areaP > b.areaP;
+  };
+
+  // ---- FASE 1: franjas a lo largo ----
+  function fase1(minFill, semilla){
+    let pool = items.slice();
+    const strips = [], placed = [], libres = [];
+    let usedC = 0;
+    while(pool.length){
+      const c0 = strips.length ? usedC + kerf : 0;
+      const Cdisp = Ctot - c0;
+      if(Cdisp < EPS) break;
+      // anchos de franja posibles = medidas transversales distintas de las piezas pendientes
+      const anchos = new Map();
+      pool.forEach(it=> it.os.forEach(o=>{ if(o.w <= Cdisp+EPS) anchos.set(Math.round(o.w*100), o.w); }));
+      const evals = [];
+      const cMax = Math.max(...anchos.values());
+      anchos.forEach(c=>{
+        if(semilla==='ancho' && c < cMax-EPS) return;
+        const cands = [];
+        pool.forEach(it=>{                       // una sola orientación por pieza: la más ancha que cabe
+          let o = null;
+          it.os.forEach(x=>{ if(x.w <= c+EPS && (!o || x.w > o.w)) o = x; });
+          if(o) cands.push({it, o});
+        });
+        const r = llenarFranja(cands, c);
+        if(r.sel.length) evals.push(r);
+      });
+      if(!evals.length) break;
+      evals.sort((a,b)=> mejorQue(a,b) ? -1 : (mejorQue(b,a) ? 1 : 0));
+      let mejor = null;
+      evals.slice(0,3).forEach(e=>{ const r = mejorarFranja(e); if(!mejor || mejorQue(r,mejor)) mejor = r; });
+      if(llenado(mejor) < minFill) break;
+
+      // colocar: más anchas primero (las del mismo ancho quedan juntas y sus huecos laterales se unen)
+      const sel = mejor.sel.slice().sort((a,b)=> b.o.w - a.o.w || b.o.h - a.o.h);
+      let lOff = 0, run = null;
+      const cierraRun = ()=>{ if(run && run.w > EPS) libres.push({x:run.x, y:run.y, w:run.w, h:run.h}); run = null; };
+      sel.forEach((k,i)=>{
+        if(i) lOff += kerf;
+        placed.push({...k.it.p, x:m+c0, y:m+lOff, w:k.o.w, h:k.o.h, rotated:k.o.rot, boardId:board.instanceId});
+        const gapW = mejor.c - k.o.w - kerf;                     // hueco lateral junto a esta pieza
+        if(run && Math.abs(run.cw - k.o.w) < EPS){ run.h = (m+lOff+k.o.h) - run.y; }
+        else { cierraRun(); run = {cw:k.o.w, x:m+c0+k.o.w+kerf, y:m+lOff, w:gapW, h:k.o.h}; }
+        lOff += k.o.h;
+      });
+      cierraRun();
+      const usados = new Set(sel.map(k=>k.it));
+      pool = pool.filter(it=>!usados.has(it));
+      strips.push({c0, c:mejor.c});
+      usedC = c0 + mejor.c;
+      const l0 = lOff + kerf;                                     // resto al final de la franja
+      if(Ltot - l0 > EPS) libres.push({x:m+c0, y:m+l0, w:mejor.c, h:Ltot-l0});
+    }
+    const cSobra = strips.length ? usedC + kerf : 0;              // columna sobrante a lo ancho
+    if(Ctot - cSobra > EPS) libres.push({x:m+cSobra, y:m, w:Ctot-cSobra, h:Ltot});
+    return {strips, placed, pool, libres};
+  }
+
+  // ---- FASE 2: aprovechar todos los sobrantes (cualquier orientación permitida) ----
+  const ordenFns = {
+    area:  (a,b)=> (b.p.w*b.p.h) - (a.p.w*a.p.h),
+    largo: (a,b)=> Math.max(b.p.w,b.p.h) - Math.max(a.p.w,a.p.h) || (b.p.w*b.p.h)-(a.p.w*a.p.h),
+    ancho: (a,b)=> Math.min(b.p.w,b.p.h) - Math.min(a.p.w,a.p.h) || (b.p.w*b.p.h)-(a.p.w*a.p.h)
+  };
+  function fase2(libresIni, pool, orden){
+    const regs = libresIni.map((r,i)=>({...r, root:i}));
+    const placed = [], sin = [], raices = new Set();
+    for(const it of pool.slice().sort(ordenFns[orden])){
+      let best = null;
+      regs.forEach((reg,ri)=>{
+        for(const o of it.os){
+          if(o.w <= reg.w+EPS && o.h <= reg.h+EPS){
+            const sw = reg.w-o.w, sh = reg.h-o.h;
+            const score = Math.min(sw,sh)*1e5 + Math.max(sw,sh);
+            if(!best || score < best.score) best = {ri, o, score};
+          }
+        }
+      });
+      if(!best){ sin.push(it); continue; }
+      const reg = regs[best.ri], o = best.o;
+      placed.push({...it.p, x:reg.x, y:reg.y, w:o.w, h:o.h, rotated:o.rot, boardId:board.instanceId});
+      raices.add(reg.root);
+      const rightW = reg.w-o.w-kerf, bottomH = reg.h-o.h-kerf, rt = reg.root;
+      const A = [], B = [];
+      if(rightW > EPS)  A.push({x:reg.x+o.w+kerf, y:reg.y, w:rightW, h:reg.h, root:rt});
+      if(bottomH > EPS) A.push({x:reg.x, y:reg.y+o.h+kerf, w:o.w, h:bottomH, root:rt});
+      if(bottomH > EPS) B.push({x:reg.x, y:reg.y+o.h+kerf, w:reg.w, h:bottomH, root:rt});
+      if(rightW > EPS)  B.push({x:reg.x+o.w+kerf, y:reg.y, w:rightW, h:o.h, root:rt});
+      const maxA = A.reduce((s,r)=>Math.max(s,r.w*r.h),0), maxB = B.reduce((s,r)=>Math.max(s,r.w*r.h),0);
+      regs.splice(best.ri, 1, ...(maxA >= maxB ? A : B));
+    }
+    return {placed, sin, regs, cuts: placed.length + raices.size};
+  }
+
+  // ---- Combinar variantes y quedarse con la que más área coloca ----
+  const cands = [];
+  ['llenado','ancho'].forEach(sem=> [0.85, 0.7, 0.5, 0.3, 0].forEach(mf=>{ const f = fase1(mf, sem); if(f.strips.length) cands.push(f); }));
+  if(!cands.length) cands.push(fase1(0, 'ancho'));   // asegura que siempre se intente al menos una franja
+
+  let mejor = null;
+  cands.forEach(f1=>{
+    Object.keys(ordenFns).forEach(ord=>{
+      const f2 = fase2(f1.libres, f1.pool, ord);
+      const placed = f1.placed.concat(f2.placed);
+      const area = usedArea(placed);
+      const cuts = f1.strips.length + f1.placed.length + f2.cuts;
+      if(!mejor || area > mejor.area + 1e-6 || (Math.abs(area-mejor.area) <= 1e-6 && cuts < mejor.cuts))
+        mejor = {placed, area, cuts, f2};
+    });
+  });
+  return {
+    placed: mejor.placed,
+    unplaced: noCaben.concat(mejor.f2.sin.map(it=>it.p)),
+    freeRegions: mejor.f2.regs.filter(r=>r.w>EPS && r.h>EPS).map(({x,y,w,h})=>({x,y,w,h})),
+    cuts: mejor.cuts
+  };
+}
+
+/* =========================================================
    OPTIMIZACIÓN GLOBAL
    ========================================================= */
 
@@ -667,7 +847,8 @@ function runMode(modeName){
     'maxrects': optimizeMaxRects,
     'mixto': optimizeMixed,
     'longitud': (p,b)=>optimizeFranjas(p,b,{sentido:'longitud'}),
-    'anchura':  (p,b)=>optimizeFranjas(p,b,{sentido:'anchura'})
+    'anchura':  (p,b)=>optimizeFranjas(p,b,{sentido:'anchura'}),
+    'mixto (largo + ancho)': optimizeLargoAncho
   };
   const fn = modeFns[modeName];
 
@@ -859,13 +1040,15 @@ document.addEventListener('input',  ()=> setTimeout(actualizarAvisoResultado,0))
 
 $('btnOptLongitud').onclick = ()=> ejecutarOptimizacion([{name:'Por longitud', mode:'longitud'}]);
 $('btnOptAnchura').onclick  = ()=> ejecutarOptimizacion([{name:'Por anchura',  mode:'anchura'}]);
+$('btnOptMixtoLA').onclick   = ()=> ejecutarOptimizacion([{name:'Mixto (Largo + Ancho)', mode:'mixto (largo + ancho)'}]);
 // ÓPTIMO: compara todos los métodos y se queda con el mejor según el criterio de prioridad
 $('btnOptimize').onclick = ()=> ejecutarOptimizacion([
   {name:'Por longitud', mode:'longitud'},
   {name:'Por anchura',  mode:'anchura'},
   {name:'Guillotine',   mode:'guillotine'},
   {name:'MaxRects',     mode:'maxrects'},
-  {name:'Mixto',        mode:'mixto'}
+  {name:'Mixto',        mode:'mixto'},
+  {name:'Mixto (Largo + Ancho)', mode:'mixto (largo + ancho)'}
 ]);
 
 function pickBest(results){
@@ -2503,7 +2686,7 @@ const TUTORIAL = [
  {id:'param',tab:'Parámetros',titulo:'Parámetros de corte',go:'parametros',ill:'param',lead:'Ajustes que se aplican a todos los métodos de optimización.',
   pasos:['Kerf: el grosor del disco de la sierra (se descuenta entre piezas).','Margen perimetral, separación mínima y margen de seguridad: espacio libre en bordes.','Tolerancias y compensación de corte para ajustar medidas.','Rotación global y «Respetar veta siempre» controlan cómo se pueden girar las piezas.','Criterio de prioridad: menos tableros, menos desperdicio, menor costo o menos cortes.'],tips:['El kerf y la tolerancia son independientes.','Los valores se guardan solos en tu navegador.'],tip:'Cambiar un parámetro después de calcular requiere recalcular.'},
  {id:'opt',tab:'Optimización',titulo:'Optimización',go:'optimizacion',ill:'opt',lead:'Elige cómo quieres cortar. CUTFIX PRO te muestra qué tanto aprovecha el material.',
-  pasos:['«Por longitud»: primero cortes paralelos al largo del tablero (franjas largas).','«Por anchura»: primero cortes a lo ancho (franjas transversales).','«Óptimo»: prueba todos los métodos y elige el mejor según tu criterio.','Revisa la tabla de comparación y el ahorro de material.'],tips:['La fila verde es el mejor resultado.','Verás tableros, aprovechamiento, desperdicio, cortes y costo.'],tip:'Es el mejor resultado encontrado por el sistema, no un óptimo matemático demostrado.'},
+  pasos:['«Por longitud»: primero cortes paralelos al largo del tablero (franjas largas).','«Por anchura»: primero cortes a lo ancho (franjas transversales).','«Mixto (Largo + Ancho)»: franjas a lo largo y luego aprovecha los sobrantes a lo ancho.','«Óptimo»: prueba todos los métodos y elige el mejor según tu criterio.','Revisa la tabla de comparación y el ahorro de material.'],tips:['La fila verde es el mejor resultado.','Verás tableros, aprovechamiento, desperdicio, cortes y costo.'],tip:'Es el mejor resultado encontrado por el sistema, no un óptimo matemático demostrado.'},
  {id:'planos',tab:'Planos y giro',titulo:'Planos de corte y giro del tablero',go:'planos',ill:'planos',lead:'Cada tablero se dibuja a escala, con piezas numeradas, medidas, veta, líneas de corte y sobrantes.',
   pasos:['Elige el tablero en la lista.','Activa o desactiva dimensiones, líneas de corte, veta y etiquetas.','Usa Zoom +, Zoom − y Reset: el dibujo se mantiene nítido.','Pulsa «Girar 90°» para cambiar entre horizontal y vertical.'],tips:['El giro es solo visual: no recalcula ni mueve piezas.','El PDF respeta la orientación que elijas.','Debajo hay un resumen de materiales y cantidades.'],tip:'Gira el tablero ANTES de generar el PDF.'},
  {id:'pdf',tab:'PDF',titulo:'PDF de optimización',go:'planos',ill:'pdf',lead:'Genera un documento con el resumen, la lista general de cortes y una hoja por cada tablero.',
