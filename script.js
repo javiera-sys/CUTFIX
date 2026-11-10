@@ -106,6 +106,18 @@ function clearTableroForm(){
   $('btnCancelTablero').style.display='none';
 }
 
+/** Validación de un tablero (la usan el formulario manual y el dictado por voz). Devuelve el mensaje de error o null. */
+function validarTablero(t){
+  if(!(t.largo>0) || !(t.ancho>0)) return 'Dimensiones inválidas';
+  return null;
+}
+/** Validación de una pieza (formulario manual y dictado por voz). */
+function validarPieza(p){
+  if(!(p.largo>0) || !(p.ancho>0)) return 'Dimensiones inválidas';
+  if(!(p.cantidad>0)) return 'Cantidad inválida';
+  return null;
+}
+
 $('btnAddTablero').onclick = ()=>{
   const t = {
     id: STATE.editTabId || uid(),
@@ -120,7 +132,8 @@ $('btnAddTablero').onclick = ()=>{
     cantidad: +$('tCantidad').value,
     margen: +$('tMargen').value
   };
-  if(t.largo<=0 || t.ancho<=0){ toast('Dimensiones inválidas','error'); return; }
+  const errT = validarTablero(t);
+  if(errT){ toast(errT,'error'); return; }
   if(STATE.editTabId){
     const i = STATE.tableros.findIndex(x=>x.id===t.id);
     STATE.tableros[i]=t;
@@ -217,8 +230,8 @@ $('btnAddPieza').onclick = ()=>{
     rot: $('pRot').value === 'true',
     obs: $('pObs').value.trim()
   };
-  if(p.largo<=0 || p.ancho<=0){ toast('Dimensiones inválidas','error'); return; }
-  if(p.cantidad<=0){ toast('Cantidad inválida','error'); return; }
+  const errP = validarPieza(p);
+  if(errP){ toast(errP,'error'); return; }
   if(STATE.editPiezaId){
     const i = STATE.piezas.findIndex(x=>x.id===p.id);
     STATE.piezas[i]=p; toast('Pieza actualizada','success');
@@ -2853,6 +2866,9 @@ const TUT_ILL = {
  inicio: TUT_W(`<g>${[['Tableros','10'],['Piezas','42'],['Aprovech.','73%'],['Modo','Óptimo']].map((s,i)=>`<rect x="${20+i*82}" y="42" width="74" height="44" rx="9" fill="#fff" stroke="#e2e8f1"/><text x="${28+i*82}" y="58" font-size="7.5" fill="#627086" font-weight="700">${s[0].toUpperCase()}</text><text x="${28+i*82}" y="78" font-size="16" fill="#2358e6" font-weight="800">${s[1]}</text>`).join('')}</g>${['1 Tableros','2 Piezas','3 Parámetros','4 Optimizar','5 Planos'].map((t,i)=>`<rect x="${20+i*65}" y="100" width="60" height="50" rx="9" fill="#fff" stroke="#e2e8f1"/><circle cx="${34+i*65}" cy="114" r="7" fill="#e8eefd"/><text x="${34+i*65}" y="117" font-size="8" fill="#2358e6" text-anchor="middle" font-weight="800">${t[0]}</text><text x="${26+i*65}" y="138" font-size="8" fill="#18212f" font-weight="700">${t.slice(2)}</text>`).join('')}`),
  tableros: TUT_W(tF(20,50,100,'Nombre','Melamina blanca')+tF(130,50,60,'Largo (mm)','2440')+tF(200,50,60,'Ancho (mm)','1220')+tF(270,50,60,'Espesor','18')+tF(20,90,70,'Precio','850')+tF(100,90,60,'Veta','A lo largo')+tF(170,90,60,'Cantidad','10')+tB(20,128,110,'+ Agregar tablero')+`<rect x="270" y="90" width="60" height="18" rx="5" fill="#c8a878"/>`),
  piezas: TUT_W(tF(20,46,90,'Nombre','Lateral izq.')+tF(120,46,50,'Largo','600')+tF(180,46,50,'Ancho','400')+tF(240,46,40,'Cant.','2')+tF(290,46,50,'Espesor','18')+tTab([]).replace(/^$/,'')+`<g transform="translate(0,52)">${tTab([['#','Nombre','Largo','Ancho','Cant.'],['1','Lateral izq.','600','400','2'],['2','Tapa','800','400','1']])}</g>`),
+ voz: TUT_W(`<circle cx="46" cy="84" r="34" fill="none" stroke="#dc2626" stroke-opacity=".3"/><circle cx="46" cy="84" r="25" fill="#dc2626"/><path d="M46 70a5 5 0 0 1 5 5v9a5 5 0 0 1-10 0v-9a5 5 0 0 1 5-5zm-9 14h2a7 7 0 0 0 14 0h2a9 9 0 0 1-8 9v5h-2v-5a9 9 0 0 1-8-9z" fill="#fff"/>`+
+   `<rect x="92" y="38" width="248" height="50" rx="8" fill="#fff" stroke="#9db0d6"/><text x="100" y="52" font-size="8.5" fill="#18212f">«Tablero de 2440 por 1220, melamina blanca,</text><text x="100" y="64" font-size="8.5" fill="#18212f">de 18 de grosor. Necesito cortar 20 piezas</text><text x="100" y="76" font-size="8.5" fill="#18212f">de 600 por 400 y 5 piezas de 800 por 300»</text>`+
+   tB(92,96,80,'Interpretar')+`<g font-size="8.5"><rect x="92" y="122" width="248" height="18" fill="#fff4c2" stroke="#e0a800"/><text x="98" y="134" fill="#18212f">Tablero · Melamina · 2440×1220 · 18 mm · cant. 10 (asumida)</text><rect x="92" y="140" width="248" height="16" fill="#fff" stroke="#e2e8f1"/><text x="98" y="151" fill="#18212f">Pieza · 600×400 · cant. 20      Pieza · 800×300 · cant. 5</text></g>`),
  excel: TUT_W(`<rect x="20" y="42" width="320" height="34" rx="9" fill="#fafbfe" stroke="#9db0d6" stroke-dasharray="4 3"/><text x="180" y="63" font-size="10" fill="#2358e6" text-anchor="middle" font-weight="700">📄 Elegir archivo .xlsx / .xls</text>`+tF(20,100,90,'Unidades válidas','HOJA')+tF(120,100,90,'Muebles','20')+tF(220,100,110,'Unidad de medida','Centímetros')+tB(20,134,120,'✓ Importar registros','#16a34a')),
  hab: TUT_W(tTab([['Incluir','Habilitado','Renglones','Muebles','Total']]).replace('','')+`<g>${[['☑','IFD4221BFF','12','20','240'],['☐','IFD5530XA','9','5','45']].map((r,i)=>`<rect x="20" y="${62+i*22}" width="320" height="22" fill="#fff" stroke="#e2e8f1" opacity="${i?.5:1}"/>`+r.map((c,j)=>`<text x="${28+j*64}" y="${76+i*22}" font-size="9" fill="#18212f">${c}</text>`).join('')).join('')}</g>`+tB(20,126,120,'Ir a calcular el corte')),
  param: TUT_W(tF(20,46,90,'Kerf (mm)','3')+tF(120,46,90,'Margen perimetral','10')+tF(220,46,110,'Separación mínima','3')+tF(20,90,90,'Rotación global','No')+tF(120,90,90,'Respetar veta','Sí')+tF(220,90,110,'Criterio','Menos tableros')+`<text x="20" y="140" font-size="8.5" fill="#627086">El kerf y la tolerancia son independientes: no se suman dos veces.</text>`),
@@ -2866,13 +2882,16 @@ const TUT_ILL = {
 const TUTORIAL = [
  {id:'resumen',tab:'Resumen',titulo:'Qué puede hacer CUTFIX PRO',go:'inicio',ill:'inicio',
   lead:'CUTFIX PRO calcula cómo cortar tus piezas en tableros completos gastando el menor material posible, y te da planos y hojas listos para el taller.',
-  grupos:[['Preparar','Tableros','Registra tus tableros: medidas, material, precio, veta y cuántos tienes.','tableros'],['Preparar','Piezas','Captura lo que debes cortar o impórtalo desde Excel.','piezas'],['Preparar','Importar Excel','Convierte una lista de materiales en piezas automáticamente.','importar'],['Preparar','Habilitados','Cada Excel es un habilitado: elige cuántos muebles y cuáles cortar juntos.','habilitados'],['Calcular','Parámetros','Ancho de sierra, márgenes, veta, rotación y criterio de prioridad.','parametros'],['Calcular','Optimización','Tres métodos de corte y comparación para elegir el mejor.','optimizacion'],['Resultados','Planos y PDF','Ve cada tablero a escala, gíralo y exporta el PDF.','planos'],['Resultados','Hoja de corte','Documento imprimible para el operador.','hoja'],['Resultados','Sobrantes','Guarda los retazos reutilizables.','sobrantes'],['Archivo','Reportes y proyectos','Excel, guardar, cargar y compartir proyectos.','reportes']]},
+  grupos:[['Preparar','Tableros','Registra tus tableros: medidas, material, precio, veta y cuántos tienes.','tableros'],['Preparar','Piezas','Captura lo que debes cortar o impórtalo desde Excel.','piezas'],['Preparar','Dictado por voz','Dicta tableros y piezas y revisa la tabla antes de cargarlos.','voz'],['Preparar','Importar Excel','Convierte una lista de materiales en piezas automáticamente.','importar'],['Preparar','Habilitados','Cada Excel es un habilitado: elige cuántos muebles y cuáles cortar juntos.','habilitados'],['Calcular','Parámetros','Ancho de sierra, márgenes, veta, rotación y criterio de prioridad.','parametros'],['Calcular','Optimización','Tres métodos de corte y comparación para elegir el mejor.','optimizacion'],['Resultados','Planos y PDF','Ve cada tablero a escala, gíralo y exporta el PDF.','planos'],['Resultados','Hoja de corte','Documento imprimible para el operador.','hoja'],['Resultados','Sobrantes','Guarda los retazos reutilizables.','sobrantes'],['Archivo','Reportes y proyectos','Excel, guardar, cargar y compartir proyectos.','reportes']]},
  {id:'tableros',tab:'Tableros',titulo:'Tableros',go:'tableros',ill:'tableros',lead:'Aquí das de alta el material con el que vas a cortar. El sistema solo usa un tablero para piezas del mismo material y espesor.',
   pasos:['Escribe un nombre (ej. «Melamina blanca») y elige el material.','Indica largo, ancho y espesor en milímetros (ej. 2440 × 1220 × 18).','Pon el precio, el color, la dirección de la veta y cuántos tableros tienes.','Pulsa «Agregar tablero».'],
   tips:['Con los iconos de la tabla puedes editar, duplicar o eliminar.','«Exportar Excel» guarda tu lista de tableros.','Si importas un Excel con un material sin tablero, se crea uno de 2440 × 1220 automáticamente.'],tip:'La «Cantidad disponible» limita cuántos tableros puede usar el cálculo.'},
  {id:'piezas',tab:'Piezas',titulo:'Piezas a cortar',go:'piezas',ill:'piezas',lead:'Registra cada pieza con sus medidas y cantidad. Puedes escribirlas a mano o traerlas de Excel.',
   pasos:['Escribe nombre, largo, ancho, cantidad y espesor.','Elige material y veta (si la pieza debe respetar el sentido de la veta).','Decide si se permite girar la pieza (rotación).','Pulsa «Agregar pieza». Usa «Cargar ejemplo» para probar rápido.'],
   tips:['Edita, duplica o elimina desde la tabla.','«Limpiar» borra todas las piezas.','La columna «Total a cortar» multiplica por los muebles del habilitado.'],tip:'Largo y ancho siempre son mayores que cero; la cantidad mínima es 1.'},
+ {id:'voz',tab:'Dictado por voz',titulo:'Dictado por voz',go:'piezas',ill:'voz',lead:'Di tus tableros y piezas en voz alta (o escríbelos como frase) y CUTFIX PRO los convierte en una tabla que tú revisas antes de cargarla.',
+  pasos:['Pulsa «Dictar por voz» (en Inicio, Tableros o Piezas).','Pulsa «Escuchar» y di, por ejemplo: «Tengo un tablero de dos mil cuatrocientos cuarenta por mil doscientos veinte, melamina blanca, de 18 de grosor. Necesito cortar 20 piezas de 600 por 400 y 5 piezas de 800 por 300».','Pulsa «Detener», corrige el texto si hace falta y elige milímetros o centímetros.','Pulsa «Interpretar» y revisa la tabla: amarillo = dudoso o asumido, rojo = error.','Pulsa «Cargar al proyecto» y luego «Ir a Optimización».'],
+  tips:['Si tu navegador no tiene dictado, escribe o pega la frase: el análisis es el mismo.','Veta y giro: «veta a lo largo», «sin veta», «se puede girar», «no girar».','Si repites un tablero o pieza que ya existe, te pregunta si sumas la cantidad o lo ignoras.','El navegador puede enviar el audio a sus servidores y necesita internet.'],tip:'Nada se carga hasta que pulses «Cargar al proyecto», y el cálculo nunca se ejecuta solo.'},
  {id:'importar',tab:'Importar Excel',titulo:'Importar desde Excel',go:'importar',ill:'excel',lead:'Sube tu lista de materiales (.xlsx o .xls) y CUTFIX PRO reconoce las columnas por su nombre.',
   pasos:['Elige el archivo.','Revisa el mapeo de columnas (descripción, cantidad, ancho, largo, grueso, material, unidad, veta y tolerancias).','Escribe las unidades que se optimizan (por defecto HOJA), el nombre del habilitado y cuántos muebles son.','Indica si las medidas del Excel están en cm o mm y revisa la tabla de revisión.','Pulsa «Importar registros».'],
   tips:['Los renglones con otra unidad se ignoran y se marcan en gris.','Los errores (falta ancho, largo, material…) salen en rojo.','Una tolerancia solo se suma si está escrita como +número, por ejemplo +2.'],tip:'Si importas el mismo archivo dos veces, no se duplican las piezas.'},
@@ -2921,6 +2940,756 @@ $('tutorial').addEventListener('click', e=>{ if(e.target===$('tutorial')) tutCer
 $('tutPrev').onclick = ()=>{ if(_tutI>0){ _tutI--; tutRender(); } };
 $('tutNext').onclick = ()=>{ if(_tutI<TUTORIAL.length-1){ _tutI++; tutRender(); } };
 document.addEventListener('keydown', e=>{ if($('tutorial').hidden) return; if(e.key==='Escape') tutCerrar(); if(e.key==='ArrowRight') $('tutNext').click(); if(e.key==='ArrowLeft') $('tutPrev').click(); });
+
+/* =========================================================
+   DICTADO POR VOZ — ANALIZADOR DE TEXTO
+   ========================================================= */
+/* <<VOZ-ANALIZADOR-START (sin DOM ni STATE; se prueba por separado)
+   ---------------------------------------------------------------
+   CutfixVoz.analizar(texto, opciones) -> { tableros:[], piezas:[], avisos:[] }
+   CutfixVoz.validar(tipo, fila, contexto) -> [{campo, nivel:'error'|'warn', msg}]
+   Opciones de analizar():
+     unidad      'mm' (por defecto) | 'cm'   unidad de largo/ancho cuando la frase no dice otra
+     materiales  ['Melamina','MDF',...]      materiales que ya existen en el programa
+     tablerosBase [{material,espesor,...}]   tableros ya cargados (solo para suponer datos faltantes)
+   --------------------------------------------------------------- */
+const CutfixVoz = (function(){
+  'use strict';
+
+  const tiene = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
+  const mk = obj => Object.assign(Object.create(null), obj);
+
+  /* ---------- Números en palabras ---------- */
+  const UNI = mk({cero:0,un:1,uno:1,una:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,
+    once:11,doce:12,trece:13,catorce:14,quince:15,dieciseis:16,diecisiete:17,dieciocho:18,diecinueve:19,veinte:20,
+    veintiun:21,veintiuno:21,veintiuna:21,veintidos:22,veintitres:23,veinticuatro:24,veinticinco:25,veintiseis:26,
+    veintisiete:27,veintiocho:28,veintinueve:29});
+  const DEC = mk({treinta:30,cuarenta:40,cincuenta:50,sesenta:60,setenta:70,ochenta:80,noventa:90});
+  const CEN = mk({cien:100,ciento:100,doscientos:200,doscientas:200,trescientos:300,trescientas:300,
+    cuatrocientos:400,cuatrocientas:400,quinientos:500,quinientas:500,seiscientos:600,seiscientas:600,
+    setecientos:700,setecientas:700,ochocientos:800,ochocientas:800,novecientos:900,novecientas:900});
+
+  const esEsp = t => /^\s+$/.test(t);
+  const RE_TOKENS = /\d+(?:[.,]\d+)*|[a-z]+|\s+|[^\sa-z0-9]/g;
+
+  /** Quita acentos, pasa a minúsculas y unifica símbolos. */
+  function normalizar(raw){
+    let s = String(raw==null ? '' : raw).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    s = s.replace(/[\u00a0\u2009\u202f]/g,' ').replace(/[×✕✖*]/g,' x ').replace(/[“”"'`´¿¡()\[\]]/g,' ');
+    return s.replace(/\s+/g,' ').trim();
+  }
+
+  /**
+   * Lee un número escrito con palabras a partir de tk[i].
+   * Devuelve {texto, fin} (fin = índice del último token usado) o null.
+   * Gramática: [miles] [centenas] [decenas [y unidad] | unidad/teens] [punto decimales | y medio]
+   */
+  function leerNumero(tk, i, permitirDec){
+    let total=0, cur=0, last='', fin=-1, n=0, hayMil=false, frac='', primera=null, k=i;
+    const sig = x => { x++; while(x<tk.length && esEsp(tk[x])) x++; return x; };
+    while(k<tk.length){
+      const w = tk[k];
+      if(esEsp(w)){ k++; continue; }
+      let ok = false;
+      if(tiene(UNI,w)){
+        const v = UNI[w];
+        if(last===''){ cur+=v; last='u'; ok=true; }
+        else if(last==='m' || last==='c'){ if(v>0){ cur+=v; last='u'; ok=true; } }
+        else if(last==='dy'){ if(v>=1 && v<=9){ cur+=v; last='u'; ok=true; } }
+      } else if(tiene(DEC,w)){
+        if(last==='' || last==='m' || last==='c'){ cur+=DEC[w]; last='d'; ok=true; }
+      } else if(tiene(CEN,w)){
+        if(last==='' || last==='m'){ cur+=CEN[w]; last='c'; ok=true; }
+      } else if(w==='mil'){
+        if(!hayMil && last!=='dy'){ total+=(cur||1)*1000; cur=0; last='m'; hayMil=true; ok=true; }
+      } else if(w==='y' && last!==''){
+        const nx = sig(k);
+        if(nx<tk.length && /^medi[oa]$/.test(tk[nx])){ frac='.5'; fin=nx; n++; break; }        // "veinte y medio"
+        if(last==='d' && nx<tk.length && tiene(UNI,tk[nx]) && UNI[tk[nx]]>=1 && UNI[tk[nx]]<=9){ last='dy'; ok=true; } // "treinta y cinco"
+      } else if((w==='punto' || w==='coma') && permitirDec && last!==''){
+        let m = sig(k), dec='', finDec=-1;
+        while(m<tk.length && tk[m]==='cero'){ dec+='0'; finDec=m; m=sig(m); }
+        if(m<tk.length){
+          if(/^\d+$/.test(tk[m])){ dec+=tk[m]; finDec=m; }
+          else { const r = leerNumero(tk,m,false); if(r){ dec+=r.texto; finDec=r.fin; } }
+        }
+        if(dec!==''){ frac='.'+dec; fin=finDec; n+=2; }
+        break;
+      }
+      if(!ok) break;
+      fin=k; n++; if(!primera) primera=w; k++;
+    }
+    if(n===0) return null;
+    if(n===1 && /^(un|uno|una)$/.test(primera) && frac==='') return null;   // "un tablero": artículo, no número
+    return { texto: String(total+cur) + frac, fin };
+  }
+
+  /** Cambia los números escritos con palabras por cifras y arregla separadores de miles/decimales. */
+  function palabrasANumeros(s){
+    // Miles con coma o punto ("2,440" / "2.440") y decimales con coma ("1,5")
+    s = s.replace(/\b(\d{1,3})([.,])(\d{3})\b(?!\s*[.,]?\d)/g, (m,a,sep,b,off,full)=>{
+      if(sep==='.' && /^\s*(metros?|mts?|m)(?![a-z])/.test(full.slice(off+m.length))) return a+'.'+b;
+      return a+b;
+    });
+    s = s.replace(/(\d),(\d{1,2})(?!\d)/g,'$1.$2');
+    const tk = s.match(RE_TOKENS) || [];
+    let out = '';
+    for(let i=0;i<tk.length;i++){
+      const w = tk[i];
+      if(/^[a-z]+$/.test(w) && (tiene(UNI,w)||tiene(DEC,w)||tiene(CEN,w)||w==='mil')){
+        const r = leerNumero(tk,i,true);
+        if(r){ out+=r.texto; i=r.fin; continue; }
+      }
+      out+=w;
+    }
+    out = out.replace(/(\d+(?:\.\d+)?)\s+y\s+medi[oa](?![a-z])/g, (m,a)=> String(+a+0.5));   // "20 y medio"
+    out = out.replace(/(\d+)\s*(?:punto|coma)\s*(\d+)/g,'$1.$2');                              // "1 punto 5"
+    return out.replace(/\s+/g,' ').trim();
+  }
+
+  /* ---------- Materiales, colores y palabras clave ---------- */
+  const SINONIMOS = [
+    ['melamina|melaminico|melaminica|melamine','Melamina'],
+    ['mdf|emedefe|eme de efe','MDF'],
+    ['triplay|tripley|triplai|multilaminado|contrachapado|plywood|playwood|multiplex|fenolico','Triplay'],
+    ['aglomerado|aglomerada|mdp|chipboard|particulas','Aglomerado'],
+    ['madera solida|madera maciza|madera natural|madera','Madera sólida']
+  ];
+  const COLORES = mk({blanco:'#f4f4f0',blanca:'#f4f4f0',negro:'#1f1f1f',negra:'#1f1f1f',gris:'#9ca3af',grafito:'#4b5563',
+    beige:'#d9c7a3',crema:'#efe3c2',marfil:'#f1ead2',roble:'#b98a52',nogal:'#6b4a2f',cerezo:'#8c4a2f',caoba:'#7a3b2e',
+    wengue:'#3a2a24',haya:'#d8b184',maple:'#e0c48f',cafe:'#7b5538',chocolate:'#5a3a29',rojo:'#c0392b',roja:'#c0392b',
+    azul:'#2d5bd1',verde:'#2e8b57',amarillo:'#e6c229',amarilla:'#e6c229',arena:'#d7bf94',natural:'#e8d3a8'});
+  const SIGLAS = ['osb','mdf','mdp','hdf','hpl','pvc'];
+  const NO_MATERIAL = ['largo','ancho','alto','grosor','espesor','grueso','veta','medida','medidas','milimetros','centimetros',
+    'metros','color','que','para','con','sin','unos','unas','los','las','del','cada','cortar','corte','cortes','pieza','piezas',
+    'tablero','tableros','plancha','planchas','hoja','hojas','tipo','medio','media','mismo','misma','este','esta','ese','esa'];
+
+  const mayus1 = t => t.charAt(0).toUpperCase() + t.slice(1);
+  const escRe = t => t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+
+  function canonicoExistente(nombre, mats){
+    const n = normalizar(nombre);
+    for(const m of mats){ if(normalizar(m)===n) return m; }
+    return nombre;
+  }
+
+  /** Busca el material en un texto: primero los conocidos/sinónimos, luego uno nuevo dicho tal cual. */
+  function detectarMaterial(txt, mats){
+    if(!txt) return null;
+    let mejor = null;
+    SINONIMOS.forEach(([fuente,canon])=>{
+      const m = new RegExp('(?:^|[^a-z])('+fuente+')(?![a-z])').exec(txt);
+      if(m && (!mejor || m.index<mejor.pos)) mejor = {nombre: canonicoExistente(canon,mats), pos:m.index};
+    });
+    (mats||[]).forEach(mat=>{
+      const n = normalizar(mat); if(!n || n==='otro') return;
+      const m = new RegExp('(?:^|[^a-z])('+escRe(n)+')(?![a-z])').exec(txt);
+      if(m && (!mejor || m.index<mejor.pos)) mejor = {nombre: mat, pos:m.index};
+    });
+    if(mejor) return {nombre:mejor.nombre, nuevo:false};
+    const nu = /\b(?:tableros?|planchas?|piezas?|cortes?|hojas?)\s+(?:de|en)\s+([a-z]{3,})(?![a-z])/.exec(txt) || /\bmaterial\s+(?:de\s+)?([a-z]{3,})(?![a-z])/.exec(txt);
+    if(nu && NO_MATERIAL.indexOf(nu[1])<0 && !tiene(COLORES,nu[1]) && !tiene(UNI,nu[1]) && !tiene(DEC,nu[1]) && !tiene(CEN,nu[1])){
+      return {nombre: SIGLAS.indexOf(nu[1])>=0 ? nu[1].toUpperCase() : mayus1(nu[1]), nuevo:true};
+    }
+    return null;
+  }
+
+  function detectarColor(txt){
+    const re = /(?:^|[^a-z])([a-z]+)(?![a-z])/g; let m;
+    while((m=re.exec(txt))){ if(tiene(COLORES,m[1])) return {palabra:m[1], hex:COLORES[m[1]]}; }
+    return null;
+  }
+
+  function detectarVeta(txt){
+    if(/\bsin\s+veta\b/.test(txt)) return {valor:'ninguna'};
+    let m = /\bveta\b[^.,;]{0,22}?\b(largo|ancho)\b/.exec(txt) || /\b(largo|ancho)\s+de\s+la\s+veta\b/.exec(txt);
+    if(m) return {valor:m[1]};
+    if(/\bcon\s+(?:la\s+)?veta\b|\bveta\b/.test(txt)) return {valor:'largo', dudoso:true};
+    return null;
+  }
+
+  function detectarRotacion(txt){
+    if(/\b(?:no|sin)\s+(?:se\s+)?(?:pued[ea]n?\s+|debe[n]?\s+)?(?:girar|rotar|rotacion|giro)/.test(txt)) return false;
+    if(/\b(?:se\s+)?(?:pued[ea]n?\s+|con\s+)?(?:girar|rotar|rotacion)\b/.test(txt)) return true;
+    return null;
+  }
+
+  const aMm = (valor, u) => { const v=+valor; if(!u) return v; return /^c/.test(u) ? v*10 : v; };   // espesor: mm salvo que digan cm
+  const factorUnidad = u => !u ? null : /^(mm|milimetro)/.test(u) ? 1 : /^(cm|centimetro)/.test(u) ? 10 : 1000;
+  const nombreUnidad = u => !u ? null : /^(mm|milimetro)/.test(u) ? 'mm' : /^(cm|centimetro)/.test(u) ? 'cm' : 'm';
+
+  /* ---------- Segmentación ---------- */
+  const LEAD = new Set(['de','del','y','mas','piezas','pieza','cortes','corte','cortar','corta','necesito','necesitamos','quiero',
+    'ocupo','requiero','tengo','tenemos','hay','un','una','uno','unos','unas','otro','otra','otros','otras','tablero','tableros',
+    'plancha','planchas','hoja','hojas','cantidad','cant','unidades','unidad','para','cada','ademas','tambien','luego','despues',
+    'con','el','la','los','las','son','es','material','medida','medidas','tabla','tablas','panel','paneles','partes','parte',
+    'que','mide','miden','en','a','al','mas']);
+  const reDelim = /(?:\.(?!\d)|[;?!\n])/g;
+  function ultimoDelim(txt){ let idx=-1, m; reDelim.lastIndex=0; while((m=reDelim.exec(txt))) idx=m.index; return idx; }
+
+  /** Dentro de un hueco entre dos medidas, índice donde empieza la "entrada" de la siguiente (ej. "20 piezas de"). */
+  function cortePorEntrada(gap){
+    const tk = gap.match(/\d+(?:\.\d+)?|[a-z]+|\s+|[^\sa-z0-9]/g) || [];
+    let pos = gap.length, cut = gap.length;
+    for(let i=tk.length-1;i>=0;i--){
+      const t = tk[i];
+      if(esEsp(t)){ pos-=t.length; continue; }
+      if(/^\d/.test(t) || LEAD.has(t)){ pos-=t.length; cut=pos; continue; }
+      break;
+    }
+    return cut;
+  }
+
+  const PRE = '(?:(largo|ancho|alto|longitud)\\s*(?:de\\s+)?)?';
+  const NUM = '(\\d+(?:\\.\\d+)?)';
+  const UNID = '(?:\\s*(mm|milimetros?|cm|centimetros?|metros?|mts?|m)(?![a-z]))?';
+  const LAB = '(?:\\s*(?:de\\s+)?(largo|ancho|alto|longitud)(?![a-z]))?';
+  const SEP = '\\s*(?:por|x)\\s*';
+  const U = '(mm|milimetros?|cm|centimetros?)';
+
+  const GENERICOS = ['pieza','piezas','corte','cortes','unidad','unidades','parte','partes','tabla','tablas','hoja','hojas','panel',
+    'paneles','plancha','planchas','tablero','tableros','mas','veces','de'];
+
+  /* ---------- Analizador principal ---------- */
+  function analizar(texto, opts){
+    opts = opts || {};
+    const unidadSel = opts.unidad==='cm' ? 'cm' : 'mm';
+    const mats = opts.materiales || [];
+    const base = opts.tablerosBase || [];
+    const avisos = [];
+
+    let s = palabrasANumeros(normalizar(texto));
+    if(!s) return {tableros:[], piezas:[], avisos:['No hay texto para interpretar.'], texto:''};
+
+    /* 1) Espesores con palabra clave ("18 de grosor", "espesor 18") -> marcadores */
+    const esp = [];
+    const marca = v => { esp.push(v); return ' \u0002'+(esp.length-1)+'\u0003 '; };
+    s = s.replace(new RegExp(NUM+'\\s*'+U+'?\\s*(?:de\\s+)?(?:grosor|espesor|grueso|gruesa)(?![a-z])','g'),
+      (m,n,u,off,full)=> /(?:por|x)\s*$/.test(full.slice(0,off)) ? m : marca(aMm(n,u)));
+    s = s.replace(new RegExp('(?:grosor|espesor|grueso|gruesa)\\s*(?:de\\s+)?'+NUM+'\\s*'+U+'?(?![a-z])','g'),
+      (m,n,u)=> marca(aMm(n,u)));
+    s = s.replace(/\s+/g,' ');
+
+    /* 2) Medidas "A por B" */
+    const reMed = new RegExp(PRE+NUM+UNID+LAB+SEP+PRE+NUM+UNID+LAB,'g');
+    const meds = []; let m;
+    while((m = reMed.exec(s))){
+      if(m[0].length===0){ reMed.lastIndex++; continue; }
+      const it = { ini:m.index, fin:m.index+m[0].length, n1:+m[2], n2:+m[6],
+        u1:nombreUnidad(m[3]), u2:nombreUnidad(m[7]),
+        l1:m[1]||m[4]||null, l2:m[5]||m[8]||null, orden:null };
+      const suf = /^\s*,?\s*(?:de\s+)?(ancho|largo)\s+por\s+(ancho|largo)(?![a-z])/.exec(s.slice(it.fin));
+      if(suf){ it.orden = suf[1]; it.fin += suf[0].length; }
+      const ter = /^\s*,?\s*(x|por)\s*(\d+(?:\.\d+)?)(?![\d.]|\s*(?:por|x)\s*\d)/.exec(s.slice(it.fin));   // tercer número: "... x 5"
+      if(ter){ it.tercer = {op:ter[1], val:+ter[2]}; it.fin += ter[0].length; }
+      meds.push(it);
+    }
+    if(!meds.length){
+      return {tableros:[], piezas:[], avisos:['No encontré medidas. Di o escribe algo como: "20 piezas de 600 por 400".'], texto:s};
+    }
+
+    /* 3) Zonas de texto de cada medida: prefijo (antes) y cola (después) */
+    const zonas = meds.map(()=>({prefijo:'', cola:''}));
+    for(let i=0;i<meds.length;i++){
+      const gap = s.slice(i? meds[i-1].fin : 0, meds[i].ini);
+      let corte = 0;
+      if(i>0){ const d = ultimoDelim(gap); corte = d>=0 ? d+1 : cortePorEntrada(gap); zonas[i-1].cola = gap.slice(0,corte); }
+      zonas[i].prefijo = gap.slice(corte);
+    }
+    zonas[meds.length-1].cola = s.slice(meds[meds.length-1].fin);
+
+    /* 4) Unidades: explícita > misma oración (hacia atrás) > "en centímetros" global > selector */
+    const gl = /\ben\s+(centimetros|milimetros|metros)(?![a-z])/.exec(s);
+    const uGlobal = gl ? nombreUnidad(gl[1]) : null;
+    meds.forEach(it=>{ it.uExp = it.u2 || it.u1; });
+    for(let i=meds.length-2;i>=0;i--){
+      if(!meds[i].uExp && meds[i+1].uExp && ultimoDelim(s.slice(meds[i].fin, meds[i+1].ini))<0){ meds[i].uHer = meds[i+1].uExp; }
+    }
+
+    /* 5) Armado de cada renglón */
+    let prevTipo = null;
+    const items = meds.map((it,i)=>{
+      const z = zonas[i];
+      const flags = {};
+      const aviso = (campo,msg)=>{ if(!flags[campo]) flags[campo]=msg; };
+
+      /* tipo: tablero o pieza (última palabra clave antes de la medida) */
+      let tipo = null, pos = -1, mm2;
+      const reB = /(?:^|[^a-z])(tableros?|planchas?)(?![a-z])/g, reP = /(?:^|[^a-z])(piezas?|cortes?|cortar|cortarlas?|partes?)(?![a-z])/g;
+      while((mm2 = reB.exec(z.prefijo))){ if(mm2.index>=pos){ pos=mm2.index; tipo='tablero'; } }
+      while((mm2 = reP.exec(z.prefijo))){ if(mm2.index>=pos){ pos=mm2.index; tipo='pieza'; } }
+
+      /* cantidad y nombre desde la "entrada" (final del prefijo) */
+      let cantidad = null, articulo = false, nombre = null;
+      const pf = z.prefijo.replace(/\s+$/,'');
+      let q = /(?:^|[^\d.])(\d+)\s+([a-z]+)\s+(?:mas\s+)?(?:de|del)$/.exec(pf);
+      if(q && GENERICOS.indexOf(q[2])<0 && !LEAD.has(q[2]) && !tiene(COLORES,q[2])){ cantidad=+q[1]; nombre=q[2]; if(!tipo) tipo='pieza'; }
+      else {
+        q = /(?:^|[^\d.])(\d+)\s*(?:piezas?|cortes?|unidades|unidad|tableros?|planchas?|hojas?|tablas?|paneles?|partes?)?\s*(?:mas\s+)?(?:de|del)?$/.exec(pf);
+        if(q){ cantidad=+q[1]; }
+        else {
+          q = /(?:^|\s)(un|una|uno)\s*(?:tablero|plancha|pieza|corte|hoja)?\s*(?:de|del)?$/.exec(pf);
+          if(q){ cantidad=1; articulo=true; }
+          q = /(?:^|\s)(?:un|una)\s+([a-z]+)\s+(?:de|del)$/.exec(pf);
+          if(q && GENERICOS.indexOf(q[1])<0 && !LEAD.has(q[1])){ nombre=q[1]; cantidad=1; articulo=false; if(!tipo) tipo='pieza'; }
+        }
+      }
+      if(cantidad===null){
+        q = /(?:^|\s)(\d+)\s*(?:piezas?|cortes?|tableros?|planchas?|unidades)(?![a-z])/g; let ult=null, qq;
+        while((qq=q.exec(pf))) ult=qq; if(ult) cantidad=+ult[1];
+      }
+      if(cantidad===null){
+        const cc = /\b(?:cantidad|cant)\s*(?:de\s*)?(\d+)/.exec(z.prefijo+' '+z.cola);
+        if(cc) cantidad=+cc[1];
+      }
+      const colaX = it.tercer ? [null, it.tercer.op, it.tercer.val] : null;
+      const colaN = /^\s*,?\s*(?:son\s+)?(\d+)\s*(?:piezas?|cortes?|unidades)(?![a-z])/.exec(z.cola);
+
+      /* tipo por cantidad, herencia o tamaño */
+      if(!tipo && cantidad!==null && !articulo) tipo = 'pieza';
+      if(!tipo){
+        if(prevTipo) tipo = prevTipo;
+        else {
+          const f0 = factorUnidad(it.uExp || it.uHer || uGlobal || unidadSel);
+          tipo = (Math.max(it.n1,it.n2)*f0>=1000 && Math.min(it.n1,it.n2)*f0>=400) ? 'tablero' : 'pieza';
+          aviso('_fila','No dijiste si es tablero o pieza: se supuso por el tamaño. Revísalo.');
+        }
+      }
+      prevTipo = tipo;
+
+      /* orientación: etiquetas largo/ancho dichas > orden dictado (1.º = largo) */
+      let a=it.n1, b=it.n2, l1=it.l1, l2=it.l2;
+      if(it.orden && !l1 && !l2){ l1=it.orden; l2=it.orden==='largo'?'ancho':'largo'; }
+      const norm = l => l==='alto'||l==='longitud' ? 'largo' : l;
+      l1=norm(l1); l2=norm(l2);
+      let largoV, anchoV, uL, uA;
+      const u1 = it.u1 || it.u2, u2 = it.u2 || it.u1;
+      if(l1==='ancho' || l2==='largo'){ anchoV=a; largoV=b; uA=u1; uL=u2; }
+      else { largoV=a; anchoV=b; uL=u1; uA=u2; }
+      const uDef = it.uExp || it.uHer || uGlobal || unidadSel;
+      const fL = factorUnidad(uL || uDef), fA = factorUnidad(uA || uDef);
+      largoV = Math.round(largoV*fL*100)/100; anchoV = Math.round(anchoV*fA*100)/100;
+      if(!(it.uExp||it.uHer||uGlobal) && unidadSel==='cm') aviso('largo','Medidas leídas en centímetros (selector) y pasadas a mm.');
+
+      /* atributos: primero la cola, luego el prefijo */
+      const zonasTxt = [z.cola, z.prefijo];
+      const buscar = fn => { for(const t of zonasTxt){ const r = fn(t); if(r!==null && r!==undefined) return r; } return null; };
+      const matD = buscar(t=>detectarMaterial(t,mats));
+      const colD = buscar(t=>detectarColor(t));
+      const vetaD = buscar(t=>detectarVeta(t));
+      const rotD = buscar(t=>detectarRotacion(t));
+      let espV = buscar(t=>{ const e=/\u0002(\d+)\u0003/.exec(t); return e ? esp[+e[1]] : null; });
+      if(espV===null) espV = buscar(t=>{ const e=new RegExp('\\bde\\s+'+NUM+'\\s*'+U+'(?![a-z])').exec(t); return e ? aMm(e[1],e[2]) : null; });
+      if(espV===null){
+        const e = new RegExp('\\bde\\s+'+NUM+'(?!\\s*(?:\\d|por\\b|x\\b|piezas?|cortes?|unidades|tableros?|planchas?|hojas?|tablas?|paneles?|partes?|mm|cm|metros?))(?![a-z.\\d])').exec(z.cola);
+        if(e && +e[1]>=1 && +e[1]<=60) espV = +e[1];
+      }
+
+      /* tercer número pegado a la medida: tablero -> espesor, pieza -> cantidad ("x 5") */
+      if(colaX){
+        if(tipo==='tablero' && espV===null){ espV=colaX[2]; }
+        else if(tipo==='pieza' && colaX[1]==='x' && cantidad===null){ cantidad=colaX[2]; }
+      }
+      if(tipo==='pieza' && cantidad===null && colaN) cantidad=+colaN[1];
+
+      return { tipo, i, largo:largoV, ancho:anchoV, cantidad, articulo, nombre, flags, aviso,
+               mat:matD, col:colD, veta:vetaD, rot:rotD, esp:espV, ordenOriginal:(l1==='ancho'||l2==='largo') };
+    });
+
+    /* 6) Tableros primero (las piezas toman datos de ellos) */
+    const tableros = [], piezas = [];
+    items.forEach(it=>{
+      if(it.tipo!=='tablero') return;
+      let L=it.largo, A=it.ancho;
+      if(L<A){ const t=L; L=A; A=t; it.aviso('largo','Orientación corregida: en un tablero el largo es la medida mayor.'); }
+      else if(it.ordenOriginal){ it.aviso('largo','Dijiste el ancho primero; se tomó el largo como la medida mayor.'); }
+      const matN = it.mat ? it.mat.nombre : 'Melamina';
+      if(!it.mat) it.aviso('material','No dijiste el material: se supuso Melamina.');
+      else if(it.mat.nuevo) it.aviso('material','Material nuevo, tomado tal cual como lo dijiste.');
+      let espesor = it.esp;
+      if(espesor===null){ espesor = 18; it.aviso('espesor','No dijiste el espesor: se supuso 18 mm.'); }
+      let cant = it.cantidad;
+      if(cant===null || it.articulo){ cant = 10; it.aviso('cantidad','No dijiste cuántos tableros hay: se supusieron 10 (el cálculo usa solo los que necesite).'); }
+      let veta = 'largo';
+      if(it.veta){ veta = it.veta.valor; if(it.veta.dudoso) it.aviso('veta','Dijiste "veta" sin dirección: se supuso a lo largo.'); }
+      const nombre = mayus1(matN + (it.col ? ' '+it.col.palabra : ''));
+      tableros.push({ nombre, material:matN, espesor, largo:L, ancho:A, cantidad:cant, veta,
+        color: it.col ? it.col.hex : '#c8a878', precio:0, margen:0, _asumido:it.flags, _i:it.i });
+    });
+
+    const baseT = tableros.concat(base.map(t=>({material:t.material, espesor:+t.espesor, _i:-1})));
+    items.forEach(it=>{
+      if(it.tipo!=='pieza') return;
+      let material = it.mat ? it.mat.nombre : null;
+      let espesor = it.esp;
+      /* tablero de referencia para suponer lo que falta */
+      let cand = baseT.filter(t=>!material || normalizar(t.material)===normalizar(material));
+      if(espesor!==null){ const c2 = cand.filter(t=>Math.abs(t.espesor-espesor)<0.01); if(c2.length) cand=c2; }
+      if(!cand.length) cand = baseT;
+      let ref = null;
+      for(const t of cand){ if(t._i>=0 && t._i<it.i) ref=t; }
+      if(!ref) ref = cand[0] || null;
+      if(!material){
+        material = ref ? ref.material : 'Melamina';
+        it.aviso('material', ref ? 'No dijiste el material: se tomó el del tablero ('+material+').' : 'No dijiste el material: se supuso Melamina.');
+      } else if(it.mat && it.mat.nuevo) it.aviso('material','Material nuevo, tomado tal cual como lo dijiste.');
+      if(espesor===null){
+        espesor = ref ? ref.espesor : 18;
+        it.aviso('espesor', ref ? 'Espesor asumido del tablero ('+espesor+' mm).' : 'No dijiste el espesor: se supuso 18 mm.');
+      }
+      let cant = it.cantidad;
+      if(cant===null){ cant = 1; it.aviso('cantidad','No dijiste la cantidad: se supuso 1.'); }
+      let veta = 'ninguna', rot = true;
+      if(it.veta){ veta = it.veta.valor; rot = (veta==='ninguna'); if(it.veta.dudoso) it.aviso('veta','Dijiste "veta" sin dirección: se supuso a lo largo.'); }
+      if(it.rot!==null) rot = it.rot;
+      piezas.push({ nombre: it.nombre ? mayus1(it.nombre) : 'Pieza', material, espesor, largo:it.largo, ancho:it.ancho,
+        cantidad:cant, veta, rot, obs:'Dictado por voz', _asumido:it.flags, _i:it.i });
+    });
+
+    /* 7) Unir renglones idénticos (suma cantidades) */
+    const unir = (lista, claves)=>{
+      const out = [];
+      lista.forEach(f=>{
+        const k = claves.map(c=>String(f[c]).toLowerCase()).join('|');
+        const ex = out.find(o=>o._k===k);
+        if(ex){ ex.cantidad += f.cantidad; } else { f._k = k; out.push(f); }
+      });
+      out.forEach(f=>{ delete f._k; });
+      return out;
+    };
+    const tabF = unir(tableros, ['nombre','material','espesor','largo','ancho','veta']);
+    const pzaF = unir(piezas, ['nombre','material','espesor','largo','ancho','veta','rot']);
+    tabF.concat(pzaF).forEach(f=>{ delete f._i; });
+
+    if(!tabF.length && pzaF.length) avisos.push('No dictaste ningún tablero: las piezas usarán los tableros que ya tengas en el proyecto.');
+    return {tableros:tabF, piezas:pzaF, avisos, texto:s};
+  }
+
+  /* ---------- Validación (sirve también al editar la tabla) ---------- */
+  const igualN = (a,b) => normalizar(a)===normalizar(b);
+  function cabeSimple(p,b){
+    const L=+p.largo, A=+p.ancho;
+    return (L<=b.largo && A<=b.ancho) || (!!p.rot && L<=b.ancho && A<=b.largo);
+  }
+
+  /**
+   * tipo: 'tablero' | 'pieza'.  ctx: { tableros:[...], cabe:(pieza,tablero)=>bool }
+   * Rojo ('error') bloquea la carga; amarillo ('warn') solo avisa.
+   */
+  function validar(tipo, f, ctx){
+    ctx = ctx || {};
+    const out = [];
+    const add = (campo,nivel,msg)=>out.push({campo,nivel,msg});
+    const L=Number(f.largo), A=Number(f.ancho), E=Number(f.espesor), C=Number(f.cantidad);
+    if(!String(f.material==null?'':f.material).trim()) add('material','error','Falta el material.');
+    if(!(L>0)) add('largo','error','El largo debe ser mayor a 0.');
+    if(!(A>0)) add('ancho','error','El ancho debe ser mayor a 0.');
+    if(!(E>0)) add('espesor','error','El espesor debe ser mayor a 0.');
+    if(!(C>=1) || Math.floor(C)!==C) add('cantidad','error','La cantidad debe ser un entero de 1 o más.');
+    if(tipo==='tablero'){
+      if(L>0 && A>0 && L<A) add('largo','warn','En un tablero el largo suele ser la medida mayor.');
+      if((L>6000||A>6000) && L>0 && A>0) add('largo','warn','Medida muy grande para un tablero: ¿unidad correcta?');
+      if(L>0 && A>0 && (L<100||A<100)) add('largo','warn','Medida muy pequeña para un tablero: ¿unidad correcta?');
+    } else {
+      if(L>3000||A>3000) add('largo','warn','Medida muy grande para una pieza: ¿unidad correcta?');
+      if(L>0 && A>0 && (L<5||A<5)) add('largo','warn','Medida muy pequeña para una pieza: ¿unidad correcta?');
+      if(L>0 && A>0 && E>0 && String(f.material||'').trim() && ctx.tableros){
+        const cabe = ctx.cabe || cabeSimple;
+        const mismos = ctx.tableros.filter(t=>igualN(t.material,f.material) && Math.abs(Number(t.espesor)-E)<0.01 && Number(t.largo)>0 && Number(t.ancho)>0);
+        if(!mismos.length) add('espesor','warn','No hay tablero de '+f.material+' de '+E+' mm (ni dictado ni en el proyecto).');
+        else if(!mismos.some(t=>cabe(f,t))){
+          const mayor = mismos.reduce((m,t)=> (t.largo*t.ancho>m.largo*m.ancho ? t : m), mismos[0]);
+          add('largo','error','No cabe en el tablero ('+mayor.largo+'×'+mayor.ancho+'). Revisa medidas, margen, veta y giro.');
+        }
+      }
+    }
+    return out;
+  }
+
+  return { analizar, validar, normalizar, palabrasANumeros };
+})();
+/* VOZ-ANALIZADOR-END >> */
+
+/* =========================================================
+   DICTADO POR VOZ — INTERFAZ (usa CutfixVoz; no toca el motor de corte)
+   Flujo: dictar/escribir -> Interpretar -> tabla editable -> Cargar al proyecto.
+   La carga reutiliza validarTablero/validarPieza (las mismas de los formularios manuales),
+   renderTableros/renderPiezas (guardado, estadísticas) y actualizarAvisoResultado.
+   ========================================================= */
+const VOZ_UI = { rec:null, escuchando:false, fallo:false, base:'', segs:[], filas:{tableros:[],piezas:[]}, abridor:null, n:0 };
+const VOZ_FRASE = 'Tengo un tablero de 2440 por 1220, melamina blanca, de 18 de grosor. Necesito cortar 20 piezas de 600 por 400 y 5 piezas de 800 por 300.';
+
+const vozSR = () => window.SpeechRecognition || window.webkitSpeechRecognition || null;
+
+/** Materiales que ya existen en el programa (listas desplegables + los usados en tableros/piezas). */
+function vozMateriales(){
+  const mapa = new Map();
+  ['tMaterial','pMaterial'].forEach(id=>{ const el=$(id); if(el) [...el.options].forEach(o=>{ const v=(o.value||o.text||'').trim(); if(v && normTxt(v)!=='otro') mapa.set(normTxt(v),v); }); });
+  STATE.tableros.concat(STATE.piezas).forEach(x=>{ if(x.material) mapa.set(normTxt(x.material), mapa.get(normTxt(x.material))||x.material); });
+  return [...mapa.values()];
+}
+const vozMatCanon = m => { const n = normTxt(m); return vozMateriales().find(x=>normTxt(x)===n) || String(m).trim(); };
+
+function vozMsg(txt, tipo){
+  const el = $('vozEstado'); if(!el) return;
+  el.textContent = txt || ''; el.className = 'voz-estado' + (txt ? ' on' : '') + (tipo ? ' '+tipo : '');
+}
+function vozPaso(n){
+  [1,2,3].forEach(i=>{ $('vozPaso'+i).hidden = (i!==n); });
+  const b = document.querySelector('#vozPaso'+n+' .voz-body'); if(b) b.scrollTop = 0;
+}
+function vozAvisoVisto(){ try{ return localStorage.getItem('cutfix_voz_aviso')==='1'; }catch(e){ return false; } }
+function vozAvisoOk(){ try{ localStorage.setItem('cutfix_voz_aviso','1'); }catch(e){} $('vozAviso').hidden = true; }
+
+function vozAbrir(origen){
+  VOZ_UI.abridor = origen || null;
+  $('vozPanel').hidden = false; document.body.classList.add('voz-abierto');
+  $('vozAviso').hidden = vozAvisoVisto();
+  vozPaso(1); vozMsg('');
+  const mic = $('vozMic');
+  if(!vozSR()){
+    mic.disabled = true;
+    vozMsg('Tu navegador no permite el dictado por voz (prueba con Chrome, Edge o Safari actualizado). Puedes escribir o pegar la frase en el cuadro y pulsar «Interpretar»: funciona igual.','error');
+    $('vozMicTxt').textContent = 'Dictado no disponible';
+    $('vozTexto').focus();
+  } else { mic.disabled = false; $('vozMicTxt').textContent = 'Escuchar'; mic.focus(); }
+}
+function vozCerrar(){
+  vozDetener();
+  $('vozPanel').hidden = true; document.body.classList.remove('voz-abierto');
+  if(VOZ_UI.abridor && VOZ_UI.abridor.focus) VOZ_UI.abridor.focus();
+}
+
+/* ---------- Reconocimiento de voz ---------- */
+function vozMarcar(on){
+  const mic = $('vozMic'); mic.classList.toggle('rec', on); mic.setAttribute('aria-pressed', on?'true':'false');
+  if(vozSR()) $('vozMicTxt').textContent = on ? 'Detener' : 'Escuchar';
+}
+function vozMostrar(interim){
+  const partes = [VOZ_UI.base, VOZ_UI.segs.filter(Boolean).join(' '), interim||''].map(x=>x.trim()).filter(Boolean);
+  $('vozTexto').value = partes.join(' ');
+}
+function vozError(code){
+  const msgs = {
+    'not-allowed':'No diste permiso al micrófono. Actívalo en el navegador o escribe la frase en el cuadro.',
+    'service-not-allowed':'El navegador no permite el dictado en este momento. Escribe la frase en el cuadro.',
+    'no-speech':'No se escuchó nada. Acerca el micrófono y pulsa «Escuchar» otra vez.',
+    'audio-capture':'No se encontró un micrófono disponible. Escribe la frase en el cuadro.',
+    'network':'Sin conexión a internet: el dictado la necesita. Escribe la frase en el cuadro.',
+    'language-not-supported':'El navegador no soporta el idioma español para dictar. Escribe la frase en el cuadro.'
+  };
+  if(code==='aborted') return;
+  VOZ_UI.fallo = true; VOZ_UI.escuchando = false; vozMarcar(false);
+  vozMsg(msgs[code] || 'No se pudo usar el micrófono. Puedes escribir la frase en el cuadro.', 'error');
+}
+function vozIniciar(){
+  const SR = vozSR();
+  if(!SR){ vozMsg('Tu navegador no permite el dictado por voz. Escribe la frase en el cuadro.','error'); return; }
+  vozAvisoOk();
+  const rec = new SR();
+  rec.lang = 'es-MX'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+  VOZ_UI.base = $('vozTexto').value.trim(); VOZ_UI.segs = []; VOZ_UI.fallo = false; VOZ_UI.escuchando = true;
+  rec.onstart = ()=>{ vozMarcar(true); vozMsg('Escuchando… habla con calma y pulsa «Detener» al terminar.','ok'); };
+  rec.onresult = e=>{
+    let interim = '';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const r = e.results[i];
+      if(r.isFinal) VOZ_UI.segs[i] = r[0].transcript.trim(); else interim += r[0].transcript;
+    }
+    vozMostrar(interim);
+  };
+  rec.onerror = e=> vozError(e.error);
+  rec.onend = ()=>{
+    // El navegador corta solo tras un silencio: si el usuario no pulsó «Detener», se reanuda.
+    if(VOZ_UI.escuchando && !VOZ_UI.fallo){
+      VOZ_UI.base = $('vozTexto').value.trim(); VOZ_UI.segs = [];
+      try{ rec.start(); }catch(e){ VOZ_UI.escuchando=false; vozMarcar(false); }
+    } else vozMarcar(false);
+  };
+  VOZ_UI.rec = rec;
+  try{ rec.start(); }catch(e){ vozError('service-not-allowed'); }
+}
+function vozDetener(){
+  VOZ_UI.escuchando = false;
+  try{ if(VOZ_UI.rec) VOZ_UI.rec.stop(); }catch(e){}
+  vozMarcar(false);
+}
+
+/* ---------- Interpretar y tabla de confirmación ---------- */
+const vozNuevaFila = (f, tipo) => ({ ...f, _id: 'v'+(++VOZ_UI.n), _asumido: {...(f._asumido||{})}, _tipo: tipo });
+
+function vozInterpretar(){
+  vozDetener();
+  const txt = $('vozTexto').value.trim();
+  if(!txt){ vozMsg('Dicta o escribe una frase primero.','error'); return; }
+  const r = CutfixVoz.analizar(txt, { unidad:$('vozUnidad').value, materiales:vozMateriales(), tablerosBase:STATE.tableros });
+  if(!r.tableros.length && !r.piezas.length){ vozMsg((r.avisos[0]||'No entendí ninguna medida.')+' Puedes corregir el texto y volver a pulsar «Interpretar».','error'); return; }
+  VOZ_UI.filas = { tableros:r.tableros.map(f=>vozNuevaFila(f,'tablero')), piezas:r.piezas.map(f=>vozNuevaFila(f,'pieza')) };
+  $('vozAvisos').innerHTML = r.avisos.map(a=>'<li>'+escapeHtml(a)+'</li>').join('');
+  $('vozMatList').innerHTML = vozMateriales().map(m=>'<option value="'+escapeHtml(m)+'">').join('');
+  $('vozDup').hidden = true;
+  vozPintar(); vozPaso(2);
+}
+
+const vozOpcVeta = (v, tablero) => (tablero ? [['largo','A lo largo'],['ancho','A lo ancho'],['ninguna','Sin veta']] : [['ninguna','Sin restricción'],['largo','A lo largo'],['ancho','A lo ancho']])
+  .map(o=>'<option value="'+o[0]+'"'+(o[0]===v?' selected':'')+'>'+o[1]+'</option>').join('');
+const vozInp = (f,k,l,tipo,extra) => '<td data-l="'+l+'" data-c="'+k+'"><input data-k="'+k+'" '+(tipo==='number'?'type="number" step="any" inputmode="decimal"':'type="text"')+' value="'+escapeHtml(f[k]==null||Number.isNaN(f[k])?'':f[k])+'" '+(extra||'')+' aria-label="'+l+'"></td>';
+
+function vozFilaHtml(f){
+  const t = f._tipo==='tablero';
+  const acc = '<td class="vz-acc"><button class="icon-btn" type="button" data-a="dup" title="Duplicar" aria-label="Duplicar fila">'+ico('copy')+'</button><button class="icon-btn del" type="button" data-a="del" title="Eliminar" aria-label="Eliminar fila">'+ico('delete')+'</button></td>';
+  return '<tr data-id="'+f._id+'">'
+    + '<td class="vz-wide" data-l="Nombre" data-c="nombre"><input data-k="nombre" type="text" value="'+escapeHtml(f.nombre)+'" aria-label="Nombre"><div class="vz-notas"></div></td>'
+    + vozInp(f,'material','Material','text','list="vozMatList"')
+    + vozInp(f,'largo','Largo (mm)','number') + vozInp(f,'ancho','Ancho (mm)','number') + vozInp(f,'espesor','Espesor (mm)','number') + vozInp(f,'cantidad','Cantidad','number')
+    + '<td data-l="Veta" data-c="veta"><select data-k="veta" aria-label="Veta">'+vozOpcVeta(f.veta,t)+'</select></td>'
+    + (t ? '<td data-l="Color" data-c="color"><input data-k="color" type="color" value="'+escapeHtml(f.color||'#c8a878')+'" aria-label="Color"></td>'
+         : '<td data-l="Permitir giro" data-c="rot"><select data-k="rot" aria-label="Permitir giro"><option value="true"'+(f.rot?' selected':'')+'>Sí</option><option value="false"'+(!f.rot?' selected':'')+'>No</option></select></td>')
+    + acc + '</tr>';
+}
+function vozPintar(){
+  $('vozTbT').querySelector('tbody').innerHTML = VOZ_UI.filas.tableros.map(vozFilaHtml).join('');
+  $('vozTbP').querySelector('tbody').innerHTML = VOZ_UI.filas.piezas.map(vozFilaHtml).join('');
+  $('vozTbT').style.display = VOZ_UI.filas.tableros.length ? '' : 'none';
+  $('vozTbP').style.display = VOZ_UI.filas.piezas.length ? '' : 'none';
+  vozRevalidar();
+}
+
+/** ¿Cabe la pieza en el tablero? Usa el mismo criterio del motor (márgenes, veta y giro). */
+function vozCabe(p, b){
+  const d = applyTolerance({ancho:+p.ancho, largo:+p.largo});
+  return pieceFitsInBoard({w:d.w, h:d.h, rot:!!p.rot && !STATE.params.rotGlobal, veta:p.veta}, b);
+}
+function vozFlagsFila(f){
+  const ctx = { tableros: VOZ_UI.filas.tableros.concat(STATE.tableros), cabe: vozCabe };
+  const res = CutfixVoz.validar(f._tipo, f, ctx);
+  Object.entries(f._asumido||{}).forEach(([campo,msg])=>res.push({campo, nivel:'warn', msg}));
+  return res;
+}
+/** Repinta colores, notas y resumen sin reconstruir las tablas (para no perder el cursor al escribir). */
+function vozRevalidar(){
+  let err = 0, warn = 0;
+  const todas = VOZ_UI.filas.tableros.concat(VOZ_UI.filas.piezas);
+  todas.forEach(f=>{
+    const tr = document.querySelector('#vozPaso2 tr[data-id="'+f._id+'"]'); if(!tr) return;
+    const flags = vozFlagsFila(f);
+    tr.querySelectorAll('td[data-c]').forEach(td=>{
+      const c = td.dataset.c, fs = flags.filter(x=>x.campo===c);
+      const e = fs.some(x=>x.nivel==='error'), w = fs.some(x=>x.nivel==='warn');
+      td.classList.toggle('vz-err', e); td.classList.toggle('vz-warn', !e && w);
+    });
+    // campos sin columna propia (_fila) y mensajes de todas las columnas, juntos bajo el nombre
+    const notas = tr.querySelector('.vz-notas');
+    const uniq = []; flags.forEach(x=>{ if(!uniq.some(u=>u.msg===x.msg)) uniq.push(x); });
+    notas.innerHTML = uniq.map(x=>'<div class="vz-nota '+(x.nivel==='error'?'e':'w')+'">'+(x.nivel==='error'?'⛔ ':'⚠ ')+escapeHtml(x.msg)+'</div>').join('');
+    if(flags.some(x=>x.campo==='_fila')) tr.querySelector('td[data-c="nombre"]').classList.add('vz-warn');
+    else tr.querySelector('td[data-c="nombre"]').classList.remove('vz-warn');
+    err += flags.filter(x=>x.nivel==='error').length; warn += flags.filter(x=>x.nivel==='warn').length;
+  });
+  const nT = VOZ_UI.filas.tableros.length, nR = VOZ_UI.filas.piezas.length;
+  const totP = VOZ_UI.filas.piezas.reduce((a,f)=>a+(+f.cantidad||0),0);
+  $('vozResumen').textContent = nT+' tablero'+(nT===1?'':'s')+', '+totP+' pieza'+(totP===1?'':'s')+' en '+nR+' '+(nR===1?'renglón':'renglones')
+    + (err ? ' · '+err+' error'+(err===1?'':'es')+' por corregir' : '') + (warn ? ' · '+warn+' aviso'+(warn===1?'':'s') : '');
+  const vacio = !nT && !nR;
+  $('vozCargar').disabled = err>0 || vacio;
+  $('vozCargar').title = err>0 ? 'Corrige los campos en rojo para poder cargar' : '';
+}
+
+/* edición de celdas, duplicar y eliminar (delegación de eventos) */
+function vozEditar(e){
+  const el = e.target, tr = el.closest('tr[data-id]'); if(!tr || !el.dataset.k) return;
+  const f = VOZ_UI.filas.tableros.concat(VOZ_UI.filas.piezas).find(x=>x._id===tr.dataset.id); if(!f) return;
+  const k = el.dataset.k;
+  f[k] = el.type==='number' ? (el.value==='' ? NaN : +el.value) : k==='rot' ? el.value==='true' : el.value;
+  if(f._asumido) delete f._asumido[k];          // el usuario ya confirmó ese dato
+  if(k==='veta' && f._tipo==='pieza' && e.type==='change'){ f.rot = (f.veta==='ninguna'); const s=tr.querySelector('[data-k="rot"]'); if(s) s.value=String(f.rot); }
+  vozRevalidar();
+}
+function vozAccion(e){
+  const b = e.target.closest('[data-a]'); if(!b) return;
+  const tr = b.closest('tr[data-id]'); const id = tr.dataset.id;
+  [VOZ_UI.filas.tableros, VOZ_UI.filas.piezas].forEach(lista=>{
+    const i = lista.findIndex(x=>x._id===id); if(i<0) return;
+    if(b.dataset.a==='del') lista.splice(i,1);
+    else lista.splice(i+1,0,vozNuevaFila(lista[i], lista[i]._tipo));
+  });
+  vozPintar();
+}
+function vozAgregar(tipo){
+  const f = tipo==='tablero'
+    ? { nombre:'Tablero', material:'Melamina', espesor:18, largo:2440, ancho:1220, cantidad:10, veta:'largo', color:'#c8a878', precio:0, margen:0 }
+    : { nombre:'Pieza', material:'Melamina', espesor:18, largo:0, ancho:0, cantidad:1, veta:'ninguna', rot:true, obs:'Dictado por voz' };
+  VOZ_UI.filas[tipo==='tablero'?'tableros':'piezas'].push(vozNuevaFila(f,tipo));
+  vozPintar();
+}
+
+/* ---------- Carga al proyecto ---------- */
+const vozMismoTablero = (a,b) => normTxt(a.material)===normTxt(b.material) && +a.espesor===+b.espesor && +a.largo===+b.largo && +a.ancho===+b.ancho && a.veta===b.veta;
+const vozMismaPieza = (a,b) => !b.habId && normTxt(a.material)===normTxt(b.material) && +a.espesor===+b.espesor && +a.largo===+b.largo
+  && +a.ancho===+b.ancho && a.veta===b.veta && !!a.rot===!!b.rot && normTxt(a.nombre||'Pieza')===normTxt(b.nombre);
+
+function vozCargar(){
+  if($('vozCargar').disabled) return;
+  const dT = VOZ_UI.filas.tableros.filter(f=>STATE.tableros.some(t=>vozMismoTablero(f,t)));
+  const dP = VOZ_UI.filas.piezas.filter(f=>STATE.piezas.some(p=>vozMismaPieza(f,p)));
+  if(!dT.length && !dP.length){ vozAplicar('sumar'); return; }
+  const caja = $('vozDup');
+  caja.innerHTML = '<b>Ya existen en el proyecto:</b> '+dT.length+' tablero(s) y '+dP.length+' pieza(s) idénticos.<br>¿Qué hago con ellos?'
+    + '<div class="form-actions"><button class="btn btn-primary" type="button" id="vozDupSumar">Sumar la cantidad</button>'
+    + '<button class="btn btn-outline" type="button" id="vozDupIgn">Ignorar los repetidos</button>'
+    + '<button class="btn btn-ghost" type="button" id="vozDupCan">Volver a la tabla</button></div>';
+  caja.hidden = false; caja.scrollIntoView({behavior:'smooth', block:'center'});
+  $('vozDupSumar').onclick = ()=>vozAplicar('sumar');
+  $('vozDupIgn').onclick = ()=>vozAplicar('ignorar');
+  $('vozDupCan').onclick = ()=>{ caja.hidden = true; };
+}
+
+function vozAplicar(modo){
+  $('vozDup').hidden = true;
+  const tabEx = STATE.tableros.slice(), pzaEx = STATE.piezas.slice();   // solo se comparan con lo que ya existía
+  let nT=0, nP=0, sumT=0, sumP=0, ign=0, pzas=0, errores=0;
+  VOZ_UI.filas.tableros.forEach(f=>{
+    const ex = tabEx.find(t=>vozMismoTablero(f,t));
+    if(ex){ if(modo==='sumar'){ ex.cantidad += +f.cantidad; sumT++; } else ign++; return; }
+    const t = { id:uid(), nombre:String(f.nombre||'').trim()||'Tablero', material:vozMatCanon(f.material), largo:+f.largo, ancho:+f.ancho,
+      espesor:+f.espesor, precio:+f.precio||0, color:f.color||'#c8a878', veta:f.veta, cantidad:+f.cantidad, margen:+f.margen||0 };
+    const err = validarTablero(t); if(err){ errores++; return; }
+    STATE.tableros.push(t); ensureOption('tMaterial',t.material); ensureOption('pMaterial',t.material); nT++;
+  });
+  VOZ_UI.filas.piezas.forEach(f=>{
+    const ex = pzaEx.find(p=>vozMismaPieza(f,p));
+    if(ex){ if(modo==='sumar'){ ex.cantidad += +f.cantidad; sumP++; pzas += +f.cantidad; } else ign++; return; }
+    const p = { id:uid(), nombre:String(f.nombre||'').trim()||'Pieza', largo:+f.largo, ancho:+f.ancho, cantidad:+f.cantidad,
+      espesor:+f.espesor, material:vozMatCanon(f.material), veta:f.veta, rot:!!f.rot, obs:f.obs||'Dictado por voz' };
+    const err = validarPieza(p); if(err){ errores++; return; }
+    STATE.piezas.push(p); ensureOption('tMaterial',p.material); ensureOption('pMaterial',p.material); nP++; pzas += p.cantidad;
+  });
+  renderTableros(); renderPiezas(); actualizarAvisoResultado();    // guarda, actualiza tablas, estadísticas y aviso de desactualizado
+  const partes = [];
+  if(nT) partes.push(nT+' tablero(s) nuevo(s)'); if(nP) partes.push(nP+' renglón(es) de piezas nuevo(s)');
+  if(sumT||sumP) partes.push('cantidades sumadas en '+(sumT+sumP)+' renglón(es) existente(s)');
+  if(ign) partes.push(ign+' repetido(s) ignorado(s)');
+  $('vozOkMsg').textContent = 'Se agregó al proyecto: '+(partes.join(', ')||'nada nuevo')+'. Piezas a cortar agregadas: '+pzas+'.'+(errores?' ('+errores+' renglón(es) omitido(s) por inválidos.)':'');
+  toast('Dictado cargado al proyecto','success');
+  vozPaso(3);
+}
+
+/* ---------- Eventos ---------- */
+document.querySelectorAll('[data-voz-abrir]').forEach(b=>b.addEventListener('click', ()=>vozAbrir(b)));
+$('vozX').onclick = $('vozCancelar1').onclick = $('vozCancelar2').onclick = $('vozCerrar3').onclick = vozCerrar;
+$('vozAvisoOk').onclick = vozAvisoOk;
+$('vozMic').onclick = ()=>{ if(VOZ_UI.escuchando) vozDetener(); else vozIniciar(); };
+$('vozTexto').addEventListener('input', ()=>{ VOZ_UI.base = $('vozTexto').value.trim(); VOZ_UI.segs = []; });   // si editas a mano, se respeta
+$('vozEjemplo').onclick = ()=>{ $('vozTexto').value = VOZ_FRASE; VOZ_UI.base = VOZ_FRASE; VOZ_UI.segs = []; };
+$('vozInterpretar').onclick = vozInterpretar;
+$('vozRedictar').onclick = ()=>{ vozPaso(1); vozMsg(''); $('vozTexto').focus(); };
+$('vozAddT').onclick = ()=>vozAgregar('tablero');
+$('vozAddP').onclick = ()=>vozAgregar('pieza');
+['vozTbT','vozTbP'].forEach(id=>{ $(id).addEventListener('input',vozEditar); $(id).addEventListener('change',vozEditar); $(id).addEventListener('click',vozAccion); });
+$('vozCargar').onclick = vozCargar;
+$('vozMas').onclick = ()=>{ $('vozTexto').value=''; VOZ_UI.base=''; VOZ_UI.segs=[]; vozPaso(1); vozMsg(''); $('vozTexto').focus(); };
+$('vozIrOpt').onclick = ()=>{ vozCerrar(); irSeccion('optimizacion'); };
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !$('vozPanel').hidden) vozCerrar(); });
 
 document.addEventListener('DOMContentLoaded', init);
 
