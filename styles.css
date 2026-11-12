@@ -399,3 +399,12 @@ body.voz-abierto{overflow:hidden}
 }
 @media print{.voz{display:none !important}}
 .voz .btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none}
+
+/* Importar Excel: casilla "Cortar" (siempre visible al final de la vista previa) */
+#excelPreviewTable th.col-cortar,#excelPreviewTable td.col-cortar{position:sticky;right:0;text-align:center;white-space:nowrap;box-shadow:-6px 0 8px -6px rgba(15,23,42,.18)}
+#excelPreviewTable td.col-cortar{background:#fff}
+#excelPreviewTable th.col-cortar{background:#f6f8fc}
+#excelPreviewTable .chk-cortar,#excelPreviewTable #chkCortarTodas{width:18px;height:18px;cursor:pointer;accent-color:var(--primary,#2563eb)}
+#excelPreviewTable .chk-cortar-all{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+#excelPreviewTable tr.fila-desmarcada td{color:#94a3b8;background:#f8fafc}
+#excelPreviewTable tr.fila-desmarcada td.col-cortar{background:#f8fafc}
