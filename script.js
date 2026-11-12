@@ -2184,10 +2184,12 @@ function procesarFilasExcel(rows, map, opts){
 // <<PURE-END
 
 let _excelFileName = 'excel';
+let _excelDesmarcadas = new Set();   // filas del Excel que el usuario desmarcó (no se cortan); todas vienen marcadas por defecto
 
 $('excelFile').onchange = (e)=>{
   const file = e.target.files[0]; if(!file) return;
   _excelFileName = file.name;
+  _excelDesmarcadas = new Set();
   const reader = new FileReader();
   reader.onload = evt=>{
     try{
@@ -2257,32 +2259,75 @@ function updateExcelPreview(){
   const cols = STATE.excelCols;
   const mapping = getImportMapping();
 
-  // Vista previa del Excel original (sin modificar)
-  const thead = $('excelPreviewTable').querySelector('thead');
-  const tbody = $('excelPreviewTable').querySelector('tbody');
-  thead.innerHTML = '<tr>' + cols.map(c=>`<th>${escapeHtml(String(c))}</th>`).join('') + '</tr>';
-  tbody.innerHTML = '';
-  const mapped = Object.values(mapping);
-  for(let i=1;i<Math.min(rows.length, 30);i++){
-    const tr = document.createElement('tr');
-    tr.innerHTML = rows[i].map((c,j)=>{
-      const val = c===undefined?'':c;
-      return `<td style="${mapped.includes(j)?'background:#f0f9ff':''}">${escapeHtml(String(val))}</td>`;
-    }).join('');
-    tbody.appendChild(tr);
-  }
-  $('excelRowCount').textContent = `(${rows.length-1} filas detectadas)`;
-  $('excelPreviewCard').style.display='block';
-
-  // Revisión previa: qué renglones entran y con qué medidas
+  // Procesa el Excel (sin modificarlo): qué renglones se cortan y con qué medidas
   const res = procesarFilasExcel(rows, mapping, getImportOpts());
-  const ok = res.items.filter(x=>x.estado==='ok');
+  const okAll = res.items.filter(x=>x.estado==='ok');                 // renglones que se cortan (unidad válida y datos completos)
+  const marcadas = okAll.filter(x=>!_excelDesmarcadas.has(x.fila));   // los que siguen marcados como "Cortar"
+  const ok = marcadas;
   const ign = res.items.filter(x=>x.estado==='ignorada').length;
   const err = res.items.filter(x=>x.estado==='error').length;
+  const desm = okAll.length - marcadas.length;
+
+  // Vista previa: SOLO las piezas que se cortan, con casilla "Cortar" al final
+  const wrapPrev = $('excelPreviewTable').closest('.table-wrap');
+  const wrapRev = $('excelReviewTable').closest('.table-wrap');
+  const scrollPrev = wrapPrev ? wrapPrev.scrollTop : 0, scrollPrevX = wrapPrev ? wrapPrev.scrollLeft : 0;
+  const scrollRev = wrapRev ? wrapRev.scrollTop : 0;
+
+  const thead = $('excelPreviewTable').querySelector('thead');
+  const tbody = $('excelPreviewTable').querySelector('tbody');
+  thead.innerHTML = '<tr>' + cols.map(c=>`<th>${escapeHtml(String(c))}</th>`).join('') +
+    '<th class="col-cortar"><label class="chk-cortar-all"><input type="checkbox" id="chkCortarTodas"> Cortar</label></th></tr>';
+  tbody.innerHTML = '';
+  const mapped = Object.values(mapping);
+  okAll.forEach(x=>{
+    const row = rows[x.fila-1] || [];
+    const tr = document.createElement('tr');
+    const off = _excelDesmarcadas.has(x.fila);
+    if(off) tr.className = 'fila-desmarcada';
+    tr.innerHTML = cols.map((_,j)=>{
+      const val = row[j]===undefined ? '' : row[j];
+      return `<td style="${mapped.includes(j)?'background:#f0f9ff':''}">${escapeHtml(String(val))}</td>`;
+    }).join('') +
+      `<td class="col-cortar"><input type="checkbox" class="chk-cortar" data-fila="${x.fila}" ${off?'':'checked'} aria-label="Cortar fila ${x.fila}"></td>`;
+    tbody.appendChild(tr);
+  });
+  if(!okAll.length){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="${cols.length+1}" style="text-align:center;color:#94a3b8;padding:18px">Ningún renglón entra a corte con las unidades indicadas.</td>`;
+    tbody.appendChild(tr);
+  }
+  $('excelRowCount').textContent = `(${okAll.length} piezas a cortar de ${rows.length-1} filas · ${marcadas.length} marcadas)`;
+  $('excelPreviewCard').style.display='block';
+
+  // Casillas: marcar / desmarcar cada pieza y "Cortar" general en el encabezado
+  tbody.querySelectorAll('.chk-cortar').forEach(chk=>{
+    chk.onchange = ()=>{
+      const f = +chk.dataset.fila;
+      if(chk.checked) _excelDesmarcadas.delete(f); else _excelDesmarcadas.add(f);
+      updateExcelPreview();
+    };
+  });
+  const all = $('chkCortarTodas');
+  if(all){
+    all.checked = okAll.length>0 && marcadas.length===okAll.length;
+    all.indeterminate = marcadas.length>0 && marcadas.length<okAll.length;
+    all.disabled = !okAll.length;
+    all.onchange = ()=>{
+      if(all.checked) _excelDesmarcadas.clear();
+      else okAll.forEach(x=>_excelDesmarcadas.add(x.fila));
+      updateExcelPreview();
+    };
+  }
+  $('btnConfirmImport').disabled = marcadas.length===0;
+  if(wrapPrev){ wrapPrev.scrollTop = scrollPrev; wrapPrev.scrollLeft = scrollPrevX; }
+
+  // Revisión previa
   const muebles = Math.max(1, Math.floor(+$('impMuebles').value||1));
   const piezasTot = ok.reduce((s,x)=>s+Math.ceil(+(x.cantidad*muebles).toFixed(6)),0);
   $('excelWarnings').innerHTML =
     `<b>${ok.length}</b> renglones entran a optimización (${piezasTot} piezas para ${muebles} mueble${muebles>1?'s':''}) · ${ign} ignorados por unidad · ${err} con error` +
+    (desm ? ` · ${desm} desmarcado${desm>1?'s':''} por el usuario` : '') +
     (res.warnings.length ? '<br>⚠️ ' + res.warnings.slice(0,12).map(escapeHtml).join('<br>⚠️ ') + (res.warnings.length>12?`<br>… y ${res.warnings.length-12} más`:'') : '');
   $('excelReviewTable').querySelector('thead').innerHTML =
     '<tr><th>Fila</th><th>Descripción</th><th>Unidad</th><th>Material</th><th>Esp. (mm)</th><th>Cant.</th><th>Veta</th>'+
@@ -2291,17 +2336,19 @@ function updateExcelPreview(){
   rb.innerHTML = '';
   res.items.slice(0,400).forEach(x=>{
     const tr = document.createElement('tr');
-    const bg = x.estado==='ignorada' ? '#f1f5f9;color:#94a3b8' : x.estado==='error' ? '#fee2e2' : '';
+    const apagada = x.estado==='ok' && _excelDesmarcadas.has(x.fila);
+    const bg = (x.estado==='ignorada' || apagada) ? '#f1f5f9;color:#94a3b8' : x.estado==='error' ? '#fee2e2' : '';
     tr.style.cssText = bg ? 'background:'+bg : '';
     const med = (o,f,t)=> x.estado==='ok' ? `${fmt(o,1)} → <b>${fmt(f,1)}</b>` : '';
     tr.innerHTML = `<td>${x.fila}</td><td>${escapeHtml(x.nombre)}</td><td>${escapeHtml(x.unidad)}</td><td>${escapeHtml(x.material)}</td>`+
       `<td>${x.estado==='ok'?fmt(x.espesor,1):''}</td><td>${x.estado==='ok'?x.cantidad:''}</td><td>${x.estado==='ok'?x.veta:''}</td>`+
       `<td>${med(x.ancho,x.anchoFinal)}</td><td>${escapeHtml(x.tolAnchoTxt)}</td>`+
       `<td>${med(x.largo,x.largoFinal)}</td><td>${escapeHtml(x.tolLargoTxt)}</td>`+
-      `<td>${x.estado==='ok'?'✅ Entra':x.estado==='ignorada'?escapeHtml(x.motivo):'❌ '+escapeHtml(x.motivo)}</td>`;
+      `<td>${apagada?'⛔ Desmarcada (no se corta)':x.estado==='ok'?'✅ Entra':x.estado==='ignorada'?escapeHtml(x.motivo):'❌ '+escapeHtml(x.motivo)}</td>`;
     rb.appendChild(tr);
   });
   $('excelReviewCard').style.display='block';
+  if(wrapRev) wrapRev.scrollTop = scrollRev;
 }
 
 function ensureOption(selId, value){
@@ -2314,8 +2361,9 @@ function ensureOption(selId, value){
 $('btnConfirmImport').onclick = ()=>{
   const rows = STATE.excelRows; if(!rows) return;
   const res = procesarFilasExcel(rows, getImportMapping(), getImportOpts());
-  const ok = res.items.filter(x=>x.estado==='ok');
+  const ok = res.items.filter(x=>x.estado==='ok' && !_excelDesmarcadas.has(x.fila));   // solo las piezas marcadas como "Cortar"
   const errores = res.items.filter(x=>x.estado==='error').length;
+  if(!ok.length){ toast('No hay piezas marcadas para cortar','error'); return; }
   const existentes = new Set(STATE.piezas.map(p=>p.srcKey).filter(Boolean));
   let count = 0, dup = 0;
   const combos = new Set();
