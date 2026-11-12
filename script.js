@@ -2364,6 +2364,19 @@ $('btnConfirmImport').onclick = ()=>{
   const ok = res.items.filter(x=>x.estado==='ok' && !_excelDesmarcadas.has(x.fila));   // solo las piezas marcadas como "Cortar"
   const errores = res.items.filter(x=>x.estado==='error').length;
   if(!ok.length){ toast('No hay piezas marcadas para cortar','error'); return; }
+
+  // Las piezas DESMARCADAS mandan: si ese mismo archivo ya se había importado antes, se quitan del proyecto
+  // las piezas de esas filas (si no, seguirían apareciendo en la optimización y en los planos).
+  const keysDesmarcadas = new Set(res.items.filter(x=>x.estado==='ok' && _excelDesmarcadas.has(x.fila)).map(x=>x.srcKey));
+  let quitadas = 0;
+  if(keysDesmarcadas.size){
+    const afectados = new Set(STATE.piezas.filter(p=>p.srcKey && keysDesmarcadas.has(p.srcKey)).map(p=>p.habId));
+    const antes = STATE.piezas.length;
+    STATE.piezas = STATE.piezas.filter(p=>!(p.srcKey && keysDesmarcadas.has(p.srcKey)));
+    quitadas = antes - STATE.piezas.length;
+    // un habilitado afectado que se quedó sin piezas se elimina
+    STATE.habilitados = (STATE.habilitados||[]).filter(h=>!afectados.has(h.id) || STATE.piezas.some(p=>p.habId===h.id));
+  }
   const existentes = new Set(STATE.piezas.map(p=>p.srcKey).filter(Boolean));
   let count = 0, dup = 0;
   const combos = new Set();
@@ -2399,8 +2412,9 @@ $('btnConfirmImport').onclick = ()=>{
   });
   if(count>0) STATE.habilitados.push(hab);
   renderPiezas(); renderTableros(); renderHabilitados();
-  const msg = `Importadas ${count} piezas` + (dup?` · ${dup} ya existían`:'') + (errores?` · ${errores} con error`:'') + (nuevos?` · ${nuevos} tableros 2440×1220 creados`:'');
-  if(count===0 && dup>0) toast('Ese archivo ya estaba importado: cambia su cantidad de muebles en Habilitados (no se duplicó nada).','error');
+  const msg = `Importadas ${count} piezas` + (dup?` · ${dup} ya existían`:'') + (errores?` · ${errores} con error`:'') + (nuevos?` · ${nuevos} tableros 2440×1220 creados`:'') + (quitadas?` · ${quitadas} desmarcadas quitadas`:'');
+  if(count===0 && quitadas>0) toast(`Se quitaron ${quitadas} renglones desmarcados que ya estaban importados · se conservan ${dup} marcados`, 'success');
+  else if(count===0 && dup>0) toast('Ese archivo ya estaba importado: cambia su cantidad de muebles en Habilitados (no se duplicó nada).','error');
   else toast(msg + (count>0 ? ` · habilitado "${hab.nombre}" × ${hab.muebles} mueble(s)` : ''), errores?'error':'success');
   if(count>0 || dup>0) document.querySelector('.nav-btn[data-section="habilitados"]').click();
 };
