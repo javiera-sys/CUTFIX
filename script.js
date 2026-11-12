@@ -29,6 +29,16 @@ function setBtn(btn, icon, text){ btn.innerHTML = ico(icon)+'<span>'+text+'</spa
 const fmt = (n,d=0) => Number(n).toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d});
 
 /* ---------- TOAST ---------- */
+/** Pregunta el nombre del PDF antes de descargarlo. Devuelve el nombre con .pdf, o null si el usuario cancela. */
+function pedirNombrePdf(sugerido){
+  const base = String(sugerido||'documento').replace(/\.pdf$/i,'');
+  const r = prompt('Nombre del archivo PDF:', base);
+  if(r === null) return null;                                   // canceló: no se descarga
+  let n = r.trim().replace(/\.pdf$/i,'').replace(/[\\/:*?"<>|]+/g,'-').trim();   // quita caracteres no válidos en nombres de archivo
+  if(!n) n = base;
+  return n + '.pdf';
+}
+
 function toast(msg, type='info'){
   const t = $('toast');
   t.textContent = msg;
@@ -1945,7 +1955,9 @@ $('btnPdfOptim').onclick = ()=>{
       modo: (r.mode || 'mixto')
     });
     const pad = n=>String(n).padStart(2,'0');
-    doc.save(`cutfix-pro_optimizacion_${ahora.getFullYear()}${pad(ahora.getMonth()+1)}${pad(ahora.getDate())}.pdf`);
+    const nombrePdf = pedirNombrePdf(`cutfix-pro_optimizacion_${ahora.getFullYear()}${pad(ahora.getMonth()+1)}${pad(ahora.getDate())}`);
+    if(!nombrePdf){ toast('Descarga cancelada','info'); return; }
+    doc.save(nombrePdf);
     toast('PDF de optimización generado','success');
   }catch(e){
     console.error(e);
@@ -2653,7 +2665,9 @@ $('btnPdfPlano').onclick = ()=>{
         }
       });
     });
-    doc.save('cutfix-pro_planos_corte.pdf');
+    const nombrePdf = pedirNombrePdf('cutfix-pro_planos_corte');
+    if(!nombrePdf){ toast('Descarga cancelada','info'); return; }
+    doc.save(nombrePdf);
     toast('PDF generado','success');
   }catch(e){
     console.error(e);
