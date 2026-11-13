@@ -408,3 +408,7 @@ body.voz-abierto{overflow:hidden}
 #excelPreviewTable .chk-cortar-all{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
 #excelPreviewTable tr.fila-desmarcada td{color:#94a3b8;background:#f8fafc}
 #excelPreviewTable tr.fila-desmarcada td.col-cortar{background:#f8fafc}
+
+/* Filtros en los encabezados de las tablas de importación */
+#excelPreviewTable th input.flt,#excelPreviewTable th select.flt,#excelReviewTable th input.flt,#excelReviewTable th select.flt{display:block;width:100%;min-width:64px;margin-top:6px;padding:4px 6px;font-size:11px;font-weight:400;border:1px solid var(--line);border-radius:6px;background:#fff;color:#18212f;text-transform:none;letter-spacing:0}
+#excelPreviewTable th .flt-limpiar,#excelReviewTable th .flt-limpiar{display:block;margin-top:5px;padding:0;border:0;background:none;color:var(--primary);font-size:10.5px;font-weight:600;cursor:pointer;text-decoration:underline;text-transform:none;letter-spacing:0}
