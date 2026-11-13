@@ -854,8 +854,424 @@ function optimizeLargoAncho(pieces, board){
 }
 
 /* =========================================================
+   MODO 4 · BÚSQUEDA GLOBAL (MIXTO LARGO + ANCHO SOBRE TODO EL LOTE)
+   ========================================================= */
+/**
+ * El mixto convencional llena un tablero a la vez de forma voraz y nunca revisa el lote completo, por eso
+ * puede gastar tableros de más. Esta búsqueda trabaja con TODAS las piezas de un material a la vez:
+ *  1) TIPOS: agrupa las piezas por medida, veta y rotación.
+ *  2) PATRONES: obtiene patrones de corte GUILLOTINABLES del tablero real (cortes de lado a lado, kerf entre
+ *     piezas, ancho y largo, solo orientaciones que permite la veta). Mezcla tipos libremente (costados +
+ *     cubiertas en el mismo tablero) y prueba cortes verticales y horizontales en cada región, sin depender
+ *     de un orden de colocación.
+ *       · Pocos tipos (<=3): enumeración exacta de todos los patrones no dominados.
+ *       · Más tipos o si se agota el tiempo: generación de columnas (modelo lineal + patrón de mayor valor por
+ *         programación dinámica); además entrega una COTA INFERIOR de tableros.
+ *  3) COBERTURA: elige cuántos tableros de cada patrón para cubrir todas las piezas con el menor número de
+ *     tableros (programación dinámica exacta; en lotes grandes redondeo del modelo lineal / voraz con
+ *     reinicios + DP exacta sobre el remanente).
+ *  4) REORGANIZACIÓN: reparte de nuevo las piezas de los tableros menos llenos para eliminar tableros casi vacíos.
+ * No altera medidas; usa el mismo kerf, márgenes y orientaciones() (veta/rotación) que los demás métodos.
+ * Devuelve null si no logra un plan completo en el tiempo dado (el llamador conserva el método convencional).
+ * Resultado: {tableros:[{placed, cuts}], cotaInferior, optimoDemostrado, ...}
+ */
+function optimizarMixtoGlobal(pieces, board, maxTableros, opts){
+  const EPS = 0.01, kerf = STATE.params.kerf;
+  const t0 = Date.now(), limiteMs = (opts && opts.limiteMs) || 3500;
+  const vencio = ()=> Date.now()-t0 > limiteMs;
+  const m = margenTablero(board), W0 = board.ancho-2*m, H0 = board.largo-2*m;
+  const r2 = v => Math.round(v*100);
+  let semilla = 20240611;
+  const rnd = ()=>{ semilla = (semilla + 0x6D2B79F5) | 0; let t = Math.imul(semilla ^ (semilla>>>15), 1 | semilla); t = (t + Math.imul(t ^ (t>>>7), 61 | t)) ^ t; return ((t ^ (t>>>14))>>>0)/4294967296; };
+
+  // ---- 1) tipos de pieza ----
+  const tipos = [], porClave = new Map();
+  for(const p of pieces){
+    let os = orientaciones(p, board).filter(o=> o.w<=W0+EPS && o.h<=H0+EPS);
+    os = os.filter((o,i)=> os.findIndex(q=>Math.abs(q.w-o.w)<EPS && Math.abs(q.h-o.h)<EPS)===i);
+    if(!os.length) return null;
+    const k = [r2(p.w), r2(p.h), p.veta, p.rot?1:0].join('|');
+    let t = porClave.get(k);
+    if(!t){ t = {os, piezas:[]}; porClave.set(k, t); tipos.push(t); }
+    t.piezas.push(p);
+  }
+  const d = tipos.length;
+  if(!d) return null;
+  const dem = tipos.map(t=>t.piezas.length);
+  const areaT = tipos.map(t=>t.os[0].w*t.os[0].h);
+  const zero = new Array(d).fill(0);
+  const minW = Math.min(...tipos.flatMap(t=>t.os.map(o=>o.w)));
+  const minH = Math.min(...tipos.flatMap(t=>t.os.map(o=>o.h)));
+  const areaDe = v => { let s=0; for(let i=0;i<d;i++) s += v[i]*areaT[i]; return s; };
+  const capar = v => v.map((x,i)=>Math.min(x, dem[i]));
+
+  // ---- 2a) puntos de corte naturales: sumas de medidas de pieza (con kerf entre ellas) ----
+  let truncado = false;                 // true si algún límite recortó la búsqueda (entonces no se afirma optimalidad)
+  function trama(dims, total, maxTerm, tope){
+    const uniq = [...new Set(dims.map(r2))].map(v=>v/100).sort((a,b)=>a-b);
+    const visto = new Map(); let frente = [];
+    uniq.forEach(dm=>{ if(dm<=total+EPS){ visto.set(r2(dm), dm); frente.push({v:dm, n:1}); } });
+    while(frente.length){
+      const sig = [];
+      for(const f of frente){
+        if(f.n >= maxTerm){ truncado = true; continue; }
+        for(const dm of uniq){
+          const v = f.v+kerf+dm; if(v > total+EPS) break;
+          const k = r2(v);
+          if(!visto.has(k)){ if(visto.size >= tope){ truncado = true; continue; } visto.set(k, v); sig.push({v, n:f.n+1}); }
+        }
+      }
+      frente = sig;
+    }
+    return [...visto.values()].sort((a,b)=>a-b);
+  }
+  const indiceMenorIgual = (arr, v)=>{ let lo = 0, hi = arr.length-1, r = -1; while(lo<=hi){ const mid = (lo+hi)>>1; if(arr[mid] <= v+EPS){ r = mid; lo = mid+1; } else hi = mid-1; } return r; };
+
+  // ---- 2b) enumeración exacta de patrones no dominados (pocos tipos) ----
+  function patronesExactos(){
+    const rX = trama(tipos.flatMap(t=>t.os.map(o=>o.w)), W0, 99, 1600);
+    const rY = trama(tipos.flatMap(t=>t.os.map(o=>o.h)), H0, 99, 3200);
+    const limInterno = d<=2 ? 120 : 70, limRaiz = d<=2 ? 600 : 400;
+    const memo = new Map();
+    const domina = (a,b)=>{ for(let i=0;i<d;i++) if(a[i]<b[i]) return false; return true; };
+    function podar(cands, lim){
+      const mapa = new Map();
+      cands.forEach(c=>{ const k = c.v.join(','); if(!mapa.has(k)) mapa.set(k, c); });
+      const lista = [...mapa.values()].sort((a,b)=> b.area-a.area), keep = [];
+      for(const c of lista){ if(!keep.some(k=>domina(k.v, c.v))) keep.push(c); }
+      if(keep.length <= lim) return keep;
+      truncado = true;
+      const sel = new Set(keep.slice(0, lim));
+      for(let i=0;i<d;i++){ let b = null; keep.forEach(c=>{ if(!b || c.v[i]>b.v[i] || (c.v[i]===b.v[i] && c.area>b.area)) b = c; }); if(b) sel.add(b); }
+      return keep.filter(c=>sel.has(c));
+    }
+    function f(Wr, Hr){                         // región normalizada a puntos de trama (sin pérdida de patrones)
+      const iw = indiceMenorIgual(rX, Wr), ih = indiceMenorIgual(rY, Hr);
+      if(iw<0 || ih<0) return [{v:zero, area:0, src:null}];
+      const W = rX[iw], H = rY[ih], key = iw*100000 + ih;
+      const hit = memo.get(key); if(hit) return hit;
+      if(vencio()) throw new Error('tiempo');
+      const cands = [{v:zero, area:0, src:null}];
+      tipos.forEach((t,i)=> t.os.forEach(o=>{ if(o.w<=W+EPS && o.h<=H+EPS){ const v = zero.slice(); v[i] = 1; cands.push({v, area:areaT[i], src:{k:'L', t:i, o}}); } }));
+      const combinar = (L, R, k, pos)=>{
+        for(const a of L){ if(!a.area) continue;
+          for(const b of R){ if(!b.area) continue;
+            const v = new Array(d);
+            for(let i=0;i<d;i++){ const s = a.v[i]+b.v[i]; v[i] = s>dem[i] ? dem[i] : s; }
+            cands.push({v, area:areaDe(v), src:{k, pos, a, b}});
+          } }
+      };
+      for(const x of rX){ if(x*2+kerf > W+EPS) break; combinar(f(x,H), f(W-x-kerf,H), 'V', x); }
+      for(const y of rY){ if(y*2+kerf > H+EPS) break; combinar(f(W,y), f(W,H-y-kerf), 'H', y); }
+      const res = podar(cands, (iw===rX.length-1 && ih===rY.length-1) ? limRaiz : limInterno);
+      memo.set(key, res); return res;
+    }
+    return f(W0, H0).filter(p=>p.area>0);
+  }
+
+  // ---- 2c) generación de columnas (muchos tipos) ----
+  function patronesColumnas(){
+    let maxT = 99, tope = 1200;
+    let rX, rY;
+    for(;;){                                    // tramas completas si son razonables; si no, se limitan las sumas
+      truncado = false;
+      rX = trama(tipos.flatMap(t=>t.os.map(o=>o.w)), W0, maxT, tope);
+      rY = trama(tipos.flatMap(t=>t.os.map(o=>o.h)), H0, maxT, tope*2);
+      if(rX.length*rY.length <= 90000 || maxT<=2) break;
+      maxT = maxT>4 ? 4 : maxT-1; tope = Math.max(150, tope>>1);
+    }
+    const nx = rX.length, ny = rY.length;
+    // índice de la región derecha tras un corte: floor(Xs[i]-Xs[c]-kerf)
+    const flX = new Int32Array(nx*nx).fill(-1), flY = new Int32Array(ny*ny).fill(-1);
+    for(let i=0;i<nx;i++) for(let c=0;c<nx && rX[c]*2+kerf<=rX[i]+EPS;c++) flX[i*nx+c] = indiceMenorIgual(rX, rX[i]-rX[c]-kerf);
+    for(let j=0;j<ny;j++) for(let c=0;c<ny && rY[c]*2+kerf<=rY[j]+EPS;c++) flY[j*ny+c] = indiceMenorIgual(rY, rY[j]-rY[c]-kerf);
+    const iW0 = indiceMenorIgual(rX, W0), iH0 = indiceMenorIgual(rY, H0);
+
+    function precio(y){                         // patrón guillotinable de mayor valor con precios y[] (cantidades sin límite)
+      const val = new Float64Array(nx*ny), kind = new Uint8Array(nx*ny), arg = new Int32Array(nx*ny);
+      for(let i=0;i<nx;i++){
+        if((i&15)===0 && vencio()) throw new Error('tiempo');
+        const W = rX[i];
+        for(let j=0;j<ny;j++){
+          const H = rY[j], id = i*ny+j;
+          let b = 0, k = 0, a = 0;
+          for(let t=0;t<d;t++){ if(y[t]<=b) continue; const os = tipos[t].os;
+            for(let oi=0;oi<os.length;oi++){ if(os[oi].w<=W+EPS && os[oi].h<=H+EPS){ b = y[t]; k = 1; a = t*2+oi; break; } } }
+          for(let c=0;c<i && rX[c]*2+kerf<=W+EPS;c++){
+            const r = flX[i*nx+c]; if(r<0) continue;
+            const v = val[c*ny+j]+val[r*ny+j]; if(v>b+1e-12){ b = v; k = 2; a = c; }
+          }
+          for(let c=0;c<j && rY[c]*2+kerf<=H+EPS;c++){
+            const r = flY[j*ny+c]; if(r<0) continue;
+            const v = val[i*ny+c]+val[i*ny+r]; if(v>b+1e-12){ b = v; k = 3; a = c; }
+          }
+          val[id] = b; kind[id] = k; arg[id] = a;
+        }
+      }
+      function nodo(i, j){
+        const id = i*ny+j, k = kind[id], a = arg[id];
+        if(!k) return {src:null};
+        if(k===1){ const t = a>>1, oi = a&1; return {src:{k:'L', t, o:tipos[t].os[oi]}}; }
+        if(k===2) return {src:{k:'V', pos:rX[a], a:nodo(a,j), b:nodo(flX[i*nx+a], j)}};
+        return {src:{k:'H', pos:rY[a], a:nodo(i,a), b:nodo(i, flY[j*ny+a])}};
+      }
+      const raiz = nodo(iW0, iH0);
+      const v = zero.slice();
+      (function contar(n){ if(!n.src) return; const s = n.src; if(s.k==='L') v[s.t]++; else { contar(s.a); contar(s.b); } })(raiz);
+      return {valor: val[iW0*ny+iH0], v, src: raiz.src};
+    }
+
+    function resolverLP(cols){                  // dual: max dem·y  s.t.  p_j·y <= 1  (símplex en tabla)
+      const mm = cols.length, n = d, W = n+mm+1;
+      const T = cols.map((p,r)=>{ const row = new Float64Array(W); for(let i=0;i<n;i++) row[i] = p[i]; row[n+r] = 1; row[W-1] = 1; return row; });
+      const obj = new Float64Array(W); for(let i=0;i<n;i++) obj[i] = -dem[i];
+      const base = cols.map((_,r)=>n+r);
+      for(let it=0; it<8000; it++){
+        let e = -1, mejor = -1e-9;
+        if(it < 400){ for(let c=0;c<W-1;c++) if(obj[c]<mejor){ mejor = obj[c]; e = c; } }
+        else { for(let c=0;c<W-1;c++) if(obj[c]<-1e-9){ e = c; break; } }   // regla de Bland (evita ciclos)
+        if(e<0) break;
+        let fila = -1, rmin = Infinity;
+        for(let r=0;r<mm;r++){ const a = T[r][e]; if(a>1e-9){ const q = T[r][W-1]/a; if(q<rmin-1e-12 || (Math.abs(q-rmin)<=1e-12 && base[r]<base[fila])){ rmin = q; fila = r; } } }
+        if(fila<0) return null;
+        const pv = T[fila][e]; for(let c=0;c<W;c++) T[fila][c] /= pv;
+        for(let r=0;r<mm;r++){ if(r===fila) continue; const fct = T[r][e]; if(fct!==0) for(let c=0;c<W;c++) T[r][c] -= fct*T[fila][c]; }
+        const fo = obj[e]; for(let c=0;c<W;c++) obj[c] -= fo*T[fila][c];
+        base[fila] = e;
+      }
+      const y = new Array(n).fill(0);
+      base.forEach((b,r)=>{ if(b<n) y[b] = T[r][W-1]; });
+      const x = cols.map((_,j)=>Math.max(0, obj[n+j]));
+      return {z: obj[W-1], y, x};
+    }
+
+    const pool = [], claves = new Set();
+    const agregar = c=>{ const k = c.v.join(','); if(claves.has(k) || !c.v.some(q=>q>0)) return false; claves.add(k); pool.push(c); return true; };
+    for(let i=0;i<d;i++){ const y = zero.slice(); y[i] = 1; agregar(precio(y)); }
+    let sol = null, convergio = false;
+    for(let it=0; it<120; it++){
+      sol = resolverLP(pool.map(p=>p.v)); if(!sol) break;
+      const c = precio(sol.y);
+      if(c.valor <= 1+1e-7){ convergio = true; break; }
+      if(!agregar(c)) break;
+    }
+    if(!sol) throw new Error('lp');
+    let cota = 0;
+    if(convergio && !truncado) cota = Math.ceil(sol.z-1e-6);
+    const lpx = sol.x.slice(), lpPool = pool.slice();
+    // más diversidad: patrones con precios perturbados
+    for(let r=0; r<14 && !vencio(); r++){
+      const y = sol.y.map(v=> v*(1+0.5*(rnd()-0.5)) + (rnd()<0.2 ? 0.02*rnd() : 0));
+      try{ agregar(precio(y)); }catch(e){ break; }
+    }
+    return {pool, lpx, lpPool, cota, convergio, z: sol.z};
+  }
+
+  // ---- obtener el conjunto de patrones ----
+  let patrones = null, lpInfo = null, cotaInferior = 0, exacto = false;
+  if(d<=3){
+    try{ patrones = patronesExactos().map(p=>({v:p.v, area:p.area, src:p.src})); exacto = !truncado; }catch(e){ patrones = null; }
+  }
+  if(!patrones){
+    try{ lpInfo = patronesColumnas(); }catch(e){ return null; }
+    cotaInferior = lpInfo.cota;
+    patrones = lpInfo.pool.map(p=>({v:capar(p.v), area:areaDe(capar(p.v)), src:p.src, vFull:p.v}));
+  }
+  if(!patrones.length) return null;
+
+  // ---- 3) cobertura con el mínimo de tableros ----
+  const LIMITE_DP = 400000;
+  const tamEstados = rem => rem.reduce((s,v)=>s*(v+1), 1);
+  function cubrirExacto(rem, maxEstados){
+    const S = tamEstados(rem); if(S > (maxEstados || LIMITE_DP*4)) return null;
+    if(S===1) return [];
+    const stride = new Array(d); let acc = 1;
+    for(let i=0;i<d;i++){ stride[i] = acc; acc *= rem[i]+1; }
+    const dp = new Int32Array(S), eleg = new Int32Array(S).fill(-1);
+    const r = new Array(d);
+    const util = patrones.map((p,pi)=>pi).filter(pi=>true);
+    for(let idx=1; idx<S; idx++){
+      let q = idx; for(let i=0;i<d;i++){ r[i] = q % (rem[i]+1); q = (q - r[i])/(rem[i]+1); }
+      let mejor = 1e9, mc = -1, ec = -1;
+      for(let u=0; u<util.length; u++){
+        const pi = util[u], p = patrones[pi].v; let n = 0, c = 0, prog = false;
+        for(let i=0;i<d;i++){
+          const nr = r[i]>p[i] ? r[i]-p[i] : 0;
+          if(nr<r[i]){ prog = true; c += (r[i]-nr)*areaT[i]; }
+          n += nr*stride[i];
+        }
+        if(!prog) continue;
+        const val = dp[n]+1;
+        if(val<mejor || (val===mejor && c>mc)){ mejor = val; mc = c; ec = pi; }
+      }
+      dp[idx] = mejor; eleg[idx] = ec;
+    }
+    const lista = []; let idx = S-1;
+    while(idx>0){
+      const pi = eleg[idx]; if(pi<0) return null;
+      lista.push(pi);
+      let q = idx, n = 0;
+      for(let i=0;i<d;i++){ const ri = q % (rem[i]+1); q = (q-ri)/(rem[i]+1); const p = patrones[pi].v[i]; n += (ri>p ? ri-p : 0)*stride[i]; }
+      idx = n;
+    }
+    return lista;
+  }
+  function cubrirVoraz(rem0, ruido){
+    let rem = rem0.slice(); const lista = [];
+    while(tamEstados(rem) > LIMITE_DP && !vencio()){
+      let mejor = -1, mp = -1; const pun = [];
+      patrones.forEach((p,pi)=>{ let c = 0; for(let i=0;i<d;i++) c += Math.min(p.v[i], rem[i])*areaT[i]; pun.push(c); if(c>mejor){ mejor = c; mp = pi; } });
+      if(mejor<=0) break;
+      let elegido = mp;
+      if(ruido>0){ const cand = pun.map((c,pi)=>({c,pi})).filter(x=>x.c>=mejor*(1-ruido)); elegido = cand[Math.floor(rnd()*cand.length)].pi; }
+      lista.push(elegido);
+      rem = rem.map((v,i)=>Math.max(0, v-patrones[elegido].v[i]));
+    }
+    const resto = cubrirExacto(rem, LIMITE_DP*4);
+    return resto ? lista.concat(resto) : null;
+  }
+  let plan = null;
+  if(tamEstados(dem) <= LIMITE_DP*4) plan = cubrirExacto(dem);
+  else {
+    // redondeo del modelo lineal: floor(x_j) tableros de cada patrón y el remanente con DP exacta
+    if(lpInfo){
+      const rem = dem.slice(), lista = [];
+      lpInfo.lpPool.forEach((p,j)=>{
+        const pi = patrones.findIndex(q=>q.vFull===p.v || q.vFull.join(',')===p.v.join(','));
+        const n = Math.floor(lpInfo.lpx[j]+1e-9);
+        for(let k=0;k<n && pi>=0;k++){ lista.push(pi); for(let i=0;i<d;i++) rem[i] = Math.max(0, rem[i]-patrones[pi].v[i]); }
+      });
+      const resto = cubrirVoraz(rem, 0);
+      if(resto) plan = lista.concat(resto);
+    }
+    for(let r=0; r<14 && !vencio(); r++){
+      const l = cubrirVoraz(dem, r===0 ? 0 : 0.04 + 0.03*(r%4));
+      if(l && (!plan || l.length<plan.length)) plan = l;
+    }
+  }
+  if(!plan) return null;
+
+  // contenido real de cada tablero: lo que realmente se asigna (los excedentes se quitan de los últimos)
+  let tabs = plan.map(pi=>({pi, c:null}));
+  tabs.sort((a,b)=> patrones[b.pi].area - patrones[a.pi].area);
+  const asignar = ()=>{
+    const falta = dem.slice();
+    tabs.forEach(t=>{ t.c = patrones[t.pi].v.map((v,i)=>{ const u = Math.min(v, falta[i]); falta[i] -= u; return u; }); });
+    return falta.every(v=>v===0);
+  };
+  if(!asignar()) return null;
+  tabs = tabs.filter(t=>t.c.some(v=>v>0));
+  const optimoDemostrado = exacto && tamEstados(dem) <= LIMITE_DP*4 || (cotaInferior>0 && tabs.length===cotaInferior);
+
+  // ---- 4) reorganización: fusionar los tableros menos llenos ----
+  function fusionar(){
+    let mejoro = true, vueltas = 0;
+    while(mejoro && !vencio() && vueltas++<20){
+      mejoro = false;
+      const orden = tabs.slice().sort((a,b)=>areaDe(a.c)-areaDe(b.c));
+      for(let k=Math.min(7, orden.length); k>=2 && !mejoro; k--){
+        const sub = orden.slice(0,k);
+        const u = zero.slice(); sub.forEach(t=>t.c.forEach((v,i)=>{ u[i]+=v; }));
+        if(tamEstados(u) > LIMITE_DP) continue;
+        const nuevos = cubrirExacto(u, LIMITE_DP);
+        if(nuevos && nuevos.length < k){
+          const falta = u.slice();
+          const reemp = nuevos.map(pi=>({pi, c:patrones[pi].v.map((v,i)=>{ const x = Math.min(v, falta[i]); falta[i]-=x; return x; })})).filter(t=>t.c.some(v=>v>0));
+          tabs = tabs.filter(t=>!sub.includes(t)).concat(reemp);
+          mejoro = true;
+        }
+      }
+    }
+  }
+  if(!optimoDemostrado) fusionar();
+  if(maxTableros && tabs.length > maxTableros) return null;
+
+  // ---- 5) materializar coordenadas reales ----
+  function emitir(e, x, y, W, H, cuota, out){
+    if(!e.src) return 0;
+    const s = e.src;
+    if(s.k==='L'){
+      if(cuota[s.t] > 0){ cuota[s.t]--; out.push({t:s.t, x, y, w:s.o.w, h:s.o.h, rot:s.o.rot}); return 1; }
+      return 0;
+    }
+    let na, nb;
+    if(s.k==='V'){ na = emitir(s.a, x, y, s.pos, H, cuota, out); nb = emitir(s.b, x+s.pos+kerf, y, W-s.pos-kerf, H, cuota, out); }
+    else         { na = emitir(s.a, x, y, W, s.pos, cuota, out); nb = emitir(s.b, x, y+s.pos+kerf, W, H-s.pos-kerf, cuota, out); }
+    return na+nb;
+  }
+  const cola = tipos.map(t=>t.piezas.slice());
+  const tableros = [];
+  tabs.sort((a,b)=> areaDe(b.c)-areaDe(a.c));
+  for(const t of tabs){
+    const out = [], cuota = t.c.slice();
+    const n = emitir(patrones[t.pi], 0, 0, W0, H0, cuota, out);
+    if(cuota.some(v=>v>0)) return null;          // el patrón no pudo reproducir lo asignado
+    const placed = out.map(q=>({...cola[q.t].shift(), x:m+q.x, y:m+q.y, w:q.w, h:q.h, rotated:q.rot}));
+    tableros.push({placed, cuts: Math.max(1, n + 1)});
+  }
+  if(cola.some(c=>c.length)) return null;
+  return { tableros, tipos: d, patrones: patrones.length, cotaInferior: optimoDemostrado ? tableros.length : cotaInferior,
+           optimoDemostrado: !!optimoDemostrado, ms: Date.now()-t0 };
+}
+
+/** ¿El acomodo se puede cortar solo con cortes de lado a lado (guillotina) separados por el kerf? */
+function esGuillotinable(placed){
+  const kerf = STATE.params.kerf, EPS = 0.01;
+  if(placed.length <= 1) return true;
+  for(const eje of ['x','y']){
+    const tam = eje==='x' ? 'w' : 'h';
+    const bordes = [...new Set(placed.map(p=>Math.round((p[eje]+p[tam])*100)))].sort((a,b)=>a-b);
+    for(const b of bordes){
+      const r = b/100;
+      if(placed.every(p=> p[eje]+p[tam] <= r+EPS || p[eje] >= r+kerf-EPS)){
+        const A = placed.filter(p=>p[eje]+p[tam] <= r+EPS), B = placed.filter(p=>p[eje] >= r+kerf-EPS);
+        if(A.length && B.length && A.length+B.length===placed.length) return esGuillotinable(A) && esGuillotinable(B);
+      }
+    }
+  }
+  return false;
+}
+
+/* =========================================================
    OPTIMIZACIÓN GLOBAL
    ========================================================= */
+
+/**
+ * Prueba la búsqueda global para un grupo (material + espesor) y la compara con el resultado convencional.
+ * Devuelve {boards, cuts, cotaInferior, optimoDemostrado} solo si MEJORA (menos tableros, o los mismos con el
+ * desperdicio más concentrado); si no, null y se conserva el convencional.
+ */
+function intentarBusquedaGlobal(piezas, available, key, conv){
+  const base = available[0]; if(!base) return null;
+  // tableros iguales disponibles (misma medida, veta y margen) para esta búsqueda
+  const mismo = b => b.ancho===base.ancho && b.largo===base.largo && b.veta===base.veta && (b.margen||0)===(base.margen||0);
+  let n = 0; while(n < available.length && mismo(available[n])) n++;
+  let r = null;
+  try{ r = optimizarMixtoGlobal(piezas, base, n); }catch(e){ console.warn('Búsqueda global descartada:', e); return null; }
+  if(!r || !r.tableros.length) return null;
+  const ocupacion = tabs => tabs.reduce((s,t)=>{ const u = usedArea(t.placed)/(base.ancho*base.largo); return s+u*u; }, 0);
+  const boards = r.tableros.map((t,i)=>{
+    const tab = {...available[i], instanceId: `${key}_B${i}`};
+    const placed = t.placed.map(p=>({...p, boardId: tab.instanceId}));
+    return { id: tab.instanceId, board: tab, placed, freeRegions: libresDeTablero(tab, placed), mode: 'mixto (largo + ancho)',
+             variantName: 'Búsqueda global', guillotina: true, _cuts: t.cuts };
+  });
+  const sinColocar = conv.unplaced || 0;
+  const mejora = sinColocar > 0 ? true
+    : boards.length < conv.boards.length ||
+      (boards.length === conv.boards.length && ocupacion(boards) > ocupacion(conv.boards) + 1e-9);
+  const info = { cotaInferior: r.cotaInferior, optimoDemostrado: r.optimoDemostrado, tablerosGlobal: boards.length };
+  if(!mejora) return { usar:false, ...info };
+  return { usar:true, boards, cuts: boards.reduce((s,b)=>s+b._cuts,0), ...info };
+}
+
+/** Rectángulos libres máximos de un tablero (para el conteo de sobrantes reutilizables). */
+function libresDeTablero(board, placed){
+  if(typeof rectsLibres !== 'function') return [];
+  const m = margenTablero(board), kerf = STATE.params.kerf;
+  return rectsLibres({x:m, y:m, w:board.ancho-2*m, h:board.largo-2*m},
+    placed.map(p=>({x:p.x-kerf, y:p.y-kerf, w:p.w+2*kerf, h:p.h+2*kerf})));
+}
 
 /**
  * Ejecuta un modo sobre todas las piezas y tableros disponibles.
@@ -867,6 +1283,7 @@ function runMode(modeName){
   let totalCuts = 0;
   const unplacedAll = [];
   const freeLeftovers = [];
+  const infoBusqueda = [];      // por material: cómo se obtuvo el resultado (mixto largo + ancho)
 
   // Modos disponibles
   const modeFns = {
@@ -900,6 +1317,9 @@ function runMode(modeName){
       return true;
     });
 
+    // Estado antes del método convencional (para poder compararlo con la búsqueda global)
+    const remainingIni = [...remaining];
+    const nTabAntes = boardsUsed.length, cortesAntes = totalCuts;
     while(remaining.length > 0 && boardIdx < available.length){
       const board = available[boardIdx];
       board.instanceId = `${key}_B${boardIdx}`;
@@ -920,6 +1340,23 @@ function runMode(modeName){
       boardIdx++;
       totalCuts += (res.cuts!==undefined ? res.cuts : estimateCuts(res.placed, modeName));
     }
+    // MIXTO (LARGO + ANCHO): además del método convencional se prueba la búsqueda global sobre todo el lote
+    // y se conserva lo mejor (menos tableros; a igual número, el acomodo que concentra el desperdicio).
+    if(modeName === 'mixto (largo + ancho)' && remainingIni.length > 0){
+      const conv = { boards: boardsUsed.slice(nTabAntes), unplaced: remaining.length, cuts: totalCuts - cortesAntes };
+      const glob = intentarBusquedaGlobal(remainingIni, available, key, conv);
+      const usar = !!(glob && glob.usar);
+      if(usar){
+        boardsUsed.splice(nTabAntes, boardsUsed.length - nTabAntes, ...glob.boards);
+        totalCuts = cortesAntes + glob.cuts;
+        remaining = [];
+      }
+      infoBusqueda.push({ material: group.material, espesor: group.espesor,
+        metodo: usar ? 'optimizada' : 'convencional',
+        verificada: !!glob,                                   // la búsqueda global se ejecutó y no encontró algo mejor
+        tablerosConvencional: conv.boards.length, tableros: usar ? glob.boards.length : conv.boards.length,
+        cotaInferior: glob ? glob.cotaInferior : 0, optimoDemostrado: glob ? glob.optimoDemostrado : false });
+    }
     if(remaining.length > 0){
       unplacedAll.push(...remaining.map(p=>({...p, reason:'Sin tableros suficientes'})));
     }
@@ -927,6 +1364,11 @@ function runMode(modeName){
 
   const totalEsperado = Object.values(grouped).reduce((n,g)=>n+g.pieces.length,0);
   const out = { mode: modeName, boards: boardsUsed, unplaced: unplacedAll, totalCuts };
+  if(infoBusqueda.length){
+    const nOpt = infoBusqueda.filter(x=>x.metodo==='optimizada').length;
+    out.busqueda = infoBusqueda;
+    out.metodoBusqueda = nOpt===0 ? 'convencional' : nOpt===infoBusqueda.length ? 'optimizada' : 'mixta';
+  }
   out.validation = validarResultado(out, totalEsperado);
   return out;
 }
@@ -947,6 +1389,7 @@ function validarResultado(result, totalEsperado){
         if(ejePieza !== (grano==='largo' ? 'y' : 'x')) errs.push(`${b.id}: "${p.name}" quedó con la veta en sentido contrario al tablero`);
       });
     }
+    if(b.guillotina && !esGuillotinable(b.placed)) errs.push(`${b.id}: el acomodo no se puede cortar con cortes de lado a lado (guillotina)`);
     b.placed.forEach((p,i)=>{
       if(p.x < m-EPS || p.y < m-EPS || p.x+p.w > b.board.ancho-m+EPS || p.y+p.h > b.board.largo-m+EPS)
         errs.push(`${b.id}: "${p.name}" excede el tablero`);
@@ -1015,6 +1458,7 @@ function calcularResultados(estrategias, onPaso){
     return { name:e.name, result:r, metrics:computeMetrics(r), status: e.status || 'Solución heurística' };
   });
   results.forEach(x=>{ if(x.name==='Mixto' && x.result.unplaced.length===0) x.status='Mejor evaluada (no demostrada óptima)'; });
+  results.forEach(x=>{ const t = textoBusqueda(x.result); if(t) x.status = t; });
   const fallas = results.flatMap(x=>x.result.validation||[]);
   if(fallas.length){ console.error('Validación de optimización:', fallas); toast('⚠️ La validación detectó '+fallas.length+' problema(s); revisa la consola','error'); }
   STATE.lastResult = results;
@@ -1080,6 +1524,19 @@ $('btnOptimize').onclick = ()=> ejecutarOptimizacion([
   {name:'Mixto',        mode:'mixto'},
   {name:'Mixto (Largo + Ancho)', mode:'mixto (largo + ancho)'}
 ]);
+
+/** Texto corto de cómo se obtuvo un resultado del mixto (largo + ancho): búsqueda optimizada o convencional. */
+function textoBusqueda(result){
+  const b = result && result.busqueda; if(!b || !b.length) return '';
+  const demostrado = b.every(x=>x.optimoDemostrado);
+  const cota = b.reduce((n,x)=>n+(x.cotaInferior||0),0);
+  let t = result.metodoBusqueda==='optimizada' ? 'Búsqueda optimizada global'
+        : result.metodoBusqueda==='mixta' ? 'Búsqueda optimizada global (parte del lote)'
+        : (b.every(x=>x.verificada) ? 'Convencional (verificado con búsqueda global: sin mejora posible)' : 'Convencional');
+  if(demostrado) t += ' · mínimo demostrado';
+  else if(cota>0 && result.boards.length>cota) t += ` · cota inferior ${cota} tableros`;
+  return t;
+}
 
 function pickBest(results){
   const crit = STATE.params.criterio;
@@ -1684,7 +2141,8 @@ function construirPdfOptimizacion(doc, result, ctx){
   doc.setTextColor(35,88,230); doc.text('CUTFIX PRO', pw1-12, 16, {align:'right'}); doc.setTextColor(15,23,42);
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(51,65,85);
   doc.text(`Fecha de generación: ${ctx.fecha}   |   Proyecto: ${ctx.proyecto}   |   Método: ${ctx.modo}`, 12, 23);
-  doc.text(`Corte de sierra (kerf): ${kerf} mm   |   Margen perimetral: ${nf(P.margenPer + P.margenSeg)} mm`, 12, 28);
+  const tBusq = textoBusqueda(result);
+  doc.text(`Corte de sierra (kerf): ${kerf} mm   |   Margen perimetral: ${nf(P.margenPer + P.margenSeg)} mm` + (tBusq ? `   |   Búsqueda: ${tBusq}` : ''), 12, 28);
   doc.text(`Piezas: ${totCol} de ${totReq} colocadas   |   Tableros necesarios: ${totTab}   |   Patrones de corte distintos: ${agruparPatronesTablero(boards).length}   |   Aprovechamiento global: ${aT? (aP/aT*100).toFixed(1):'0.0'}%`, 12, 33);
   let yTab = 40;
   const habInc = (STATE.habilitados||[]).filter(h=>h.incluir && h.muebles>0);
