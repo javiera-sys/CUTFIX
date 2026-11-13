@@ -2655,15 +2655,15 @@ function procesarFilasExcel(rows, map, opts){
 
 let _excelFileName = 'excel';
 let _excelDesmarcadas = new Set();   // filas del Excel que el usuario desmarcó (no se cortan); todas vienen marcadas por defecto
-let _filtPrev = {cols:{}, cortar:''};      // filtros de la Vista previa (texto por columna + marcadas/desmarcadas)
-let _filtRev  = {cols:{}, estado:''};      // filtros de la Revisión antes de importar
+let _filtPrev = {};      // filtros tipo Excel de la Vista previa: {columna: Set de valores permitidos}
+let _filtRev  = {};      // filtros tipo Excel de la Revisión antes de importar
 const _normTxt = t => String(t==null?'':t).toLowerCase();
 
 $('excelFile').onchange = (e)=>{
   const file = e.target.files[0]; if(!file) return;
   _excelFileName = file.name;
   _excelDesmarcadas = new Set();
-  _filtPrev = {cols:{}, cortar:''}; _filtRev = {cols:{}, estado:''};
+  _filtPrev = {}; _filtRev = {};
   const reader = new FileReader();
   reader.onload = evt=>{
     try{
@@ -2750,14 +2750,11 @@ function updateExcelPreview(){
 
   const thead = $('excelPreviewTable').querySelector('thead');
   const tbody = $('excelPreviewTable').querySelector('tbody');
-  thead.innerHTML = '<tr>' + cols.map((c,j)=>`<th>${escapeHtml(String(c))}<input class="flt" data-j="${j}" placeholder="Filtrar" value="${escapeHtml(_filtPrev.cols[j]||'')}"></th>`).join('') +
-    `<th class="col-cortar"><label class="chk-cortar-all"><input type="checkbox" id="chkCortarTodas"> Cortar</label>
-      <select class="flt" id="fltCortar"><option value="">Todas</option><option value="marcadas">Marcadas</option><option value="desmarcadas">Desmarcadas</option></select>
-      <button type="button" class="flt-limpiar" id="btnLimpiarPrev">Limpiar filtros</button></th></tr>`;
-  thead.querySelectorAll('input.flt').forEach(inp=>{ inp.oninput = ()=>{ _filtPrev.cols[inp.dataset.j] = inp.value; aplicarFiltroPreview(); }; });
-  $('fltCortar').value = _filtPrev.cortar;
-  $('fltCortar').onchange = e=>{ _filtPrev.cortar = e.target.value; aplicarFiltroPreview(); };
-  $('btnLimpiarPrev').onclick = ()=>{ _filtPrev = {cols:{}, cortar:''}; updateExcelPreview(); };
+  const filtActivoPrev = Object.keys(_filtPrev).length>0;
+  thead.innerHTML = '<tr>' + cols.map((c,j)=>`<th><span class="th-fil">${escapeHtml(String(c))}${botonFiltro(j,_filtPrev)}</span></th>`).join('') +
+    `<th class="col-cortar"><span class="th-fil"><label class="chk-cortar-all"><input type="checkbox" id="chkCortarTodas"> Cortar</label>${botonFiltro(cols.length,_filtPrev)}</span>${filtActivoPrev?'<button type="button" class="flt-limpiar" id="btnLimpiarPrev">Limpiar filtros</button>':''}</th></tr>`;
+  thead.querySelectorAll('.flt-btn').forEach(bt=>{ bt.onclick = e=>{ e.stopPropagation(); abrirFiltroExcel(bt,'prev',+bt.dataset.c); }; });
+  if($('btnLimpiarPrev')) $('btnLimpiarPrev').onclick = ()=>{ _filtPrev = {}; updateExcelPreview(); };
   tbody.innerHTML = '';
   const mapped = Object.values(mapping);
   okAll.forEach(x=>{
@@ -2815,13 +2812,11 @@ function updateExcelPreview(){
     (res.warnings.length ? '<br>⚠️ ' + res.warnings.slice(0,12).map(escapeHtml).join('<br>⚠️ ') + (res.warnings.length>12?`<br>… y ${res.warnings.length-12} más`:'') : '');
   const titRev = ['Fila','Descripción','Unidad','Material','Esp. (mm)','Cant.','Veta','Ancho orig → final','Tol. ancho','Largo orig → final','Tol. largo'];
   const theadRev = $('excelReviewTable').querySelector('thead');
-  theadRev.innerHTML = '<tr>' + titRev.map((t,c)=>`<th>${t}<input class="flt" data-c="${c}" placeholder="Filtrar" value="${escapeHtml(_filtRev.cols[c]||'')}"></th>`).join('') +
-    `<th>Estado<select class="flt" id="fltEstadoRev"><option value="">Todos</option><option value="entra">Entra</option><option value="desmarcada">Desmarcada</option><option value="ignorada">Ignorada</option><option value="error">Error</option></select>
-      <button type="button" class="flt-limpiar" id="btnLimpiarRev">Limpiar filtros</button></th></tr>`;
-  theadRev.querySelectorAll('input.flt').forEach(inp=>{ inp.oninput = ()=>{ _filtRev.cols[inp.dataset.c] = inp.value; aplicarFiltroRevision(); }; });
-  $('fltEstadoRev').value = _filtRev.estado;
-  $('fltEstadoRev').onchange = e=>{ _filtRev.estado = e.target.value; aplicarFiltroRevision(); };
-  $('btnLimpiarRev').onclick = ()=>{ _filtRev = {cols:{}, estado:''}; updateExcelPreview(); };
+  const filtActivoRev = Object.keys(_filtRev).length>0;
+  theadRev.innerHTML = '<tr>' + titRev.map((t,c)=>`<th><span class="th-fil">${t}${botonFiltro(c,_filtRev)}</span></th>`).join('') +
+    `<th><span class="th-fil">Estado${botonFiltro(titRev.length,_filtRev)}</span>${filtActivoRev?'<button type="button" class="flt-limpiar" id="btnLimpiarRev">Limpiar filtros</button>':''}</th></tr>`;
+  theadRev.querySelectorAll('.flt-btn').forEach(bt=>{ bt.onclick = e=>{ e.stopPropagation(); abrirFiltroExcel(bt,'rev',+bt.dataset.c); }; });
+  if($('btnLimpiarRev')) $('btnLimpiarRev').onclick = ()=>{ _filtRev = {}; updateExcelPreview(); };
   const rb = $('excelReviewTable').querySelector('tbody');
   rb.innerHTML = '';
   res.items.slice(0,400).forEach(x=>{
@@ -2843,39 +2838,137 @@ function updateExcelPreview(){
   if(wrapRev) wrapRev.scrollTop = scrollRev;
 }
 
+/* ---------- Filtros tipo Excel (Vista previa y Revisión) ---------- */
+const _ETIQ_ESTADO = {entra:'Entra', desmarcada:'Desmarcada', ignorada:'Ignorada', error:'Error'};
+const _VACIO = '(Vacías)';
+function botonFiltro(c, F){ return `<button type="button" class="flt-btn${F[c]?' activo':''}" data-c="${c}" title="Filtrar esta columna" aria-label="Filtrar columna">▾</button>`; }
+
+/** Valor (texto) que tiene una fila en la columna c, tal como se ve en pantalla. */
+function valorFiltro(tipo, tr, c){
+  let v;
+  if(tipo==='prev'){
+    const nc = (STATE.excelCols||[]).length;
+    v = c>=nc ? (tr.querySelector('.chk-cortar').checked ? 'Marcadas' : 'Desmarcadas') : (tr.children[c] ? tr.children[c].textContent : '');
+  } else {
+    v = c===11 ? (_ETIQ_ESTADO[tr.dataset.estado] || '') : (tr.children[c] ? tr.children[c].textContent : '');
+  }
+  v = String(v).replace(/\s+/g,' ').trim();
+  return v==='' ? _VACIO : v;
+}
+function pasaFiltros(tipo, tr, F, exceptoC){
+  for(const [c,set] of Object.entries(F)){
+    if(!set || +c===exceptoC) continue;
+    if(!set.has(valorFiltro(tipo,tr,+c))) return false;
+  }
+  return true;
+}
+function filasDeTabla(tipo){
+  const t = $(tipo==='prev' ? 'excelPreviewTable' : 'excelReviewTable');
+  return [...t.querySelectorAll('tbody tr')].filter(tr=> tipo==='prev' ? tr.dataset.fila!==undefined : tr.dataset.estado!==undefined);
+}
+
 /** Aplica los filtros de la Vista previa (solo oculta/muestra filas; no cambia qué se importa). */
 function aplicarFiltroPreview(){
-  const tbody = $('excelPreviewTable').querySelector('tbody');
   let vis = 0, tot = 0, visMarc = 0;
-  tbody.querySelectorAll('tr[data-fila]').forEach(tr=>{
+  filasDeTabla('prev').forEach(tr=>{
     tot++;
-    const chk = tr.querySelector('.chk-cortar');
-    let ok = true;
-    for(const [j,t] of Object.entries(_filtPrev.cols)){
-      if(t && !_normTxt(tr.children[+j].textContent).includes(_normTxt(t))){ ok = false; break; }
-    }
-    if(ok && _filtPrev.cortar==='marcadas' && !chk.checked) ok = false;
-    if(ok && _filtPrev.cortar==='desmarcadas' && chk.checked) ok = false;
+    const ok = pasaFiltros('prev', tr, _filtPrev, -1);
     tr.style.display = ok ? '' : 'none';
-    if(ok){ vis++; if(chk.checked) visMarc++; }
+    if(ok){ vis++; if(tr.querySelector('.chk-cortar').checked) visMarc++; }
   });
   const all = $('chkCortarTodas');
   if(all){ all.checked = vis>0 && visMarc===vis; all.indeterminate = visMarc>0 && visMarc<vis; all.disabled = vis===0; }
-  const activo = _filtPrev.cortar || Object.values(_filtPrev.cols).some(Boolean);
+  const activo = Object.keys(_filtPrev).length>0;
   const base = $('excelRowCount').dataset.base || '';
   $('excelRowCount').textContent = `(${base}${activo ? ` · mostrando ${vis} de ${tot}` : ''})`;
 }
 
 /** Aplica los filtros de la Revisión antes de importar. */
 function aplicarFiltroRevision(){
-  $('excelReviewTable').querySelectorAll('tbody tr').forEach(tr=>{
-    let ok = true;
-    for(const [c,t] of Object.entries(_filtRev.cols)){
-      if(t && !_normTxt(tr.children[+c].textContent).includes(_normTxt(t))){ ok = false; break; }
-    }
-    if(ok && _filtRev.estado && tr.dataset.estado !== _filtRev.estado) ok = false;
-    tr.style.display = ok ? '' : 'none';
-  });
+  filasDeTabla('rev').forEach(tr=>{ tr.style.display = pasaFiltros('rev', tr, _filtRev, -1) ? '' : 'none'; });
+}
+
+/** Cierra el menú de filtro abierto (si lo hay). */
+function cerrarFiltroExcel(){
+  const pop = document.getElementById('fltPop'); if(pop) pop.remove();
+  document.removeEventListener('mousedown', _fltFuera, true);
+  document.removeEventListener('keydown', _fltTecla, true);
+  window.removeEventListener('scroll', _fltScroll, true);
+  window.removeEventListener('resize', cerrarFiltroExcel);
+}
+function _fltFuera(e){ const pop = document.getElementById('fltPop'); if(pop && !pop.contains(e.target)) cerrarFiltroExcel(); }
+function _fltTecla(e){ if(e.key==='Escape') cerrarFiltroExcel(); }
+function _fltScroll(e){ const pop = document.getElementById('fltPop'); if(pop && !pop.contains(e.target)) cerrarFiltroExcel(); }
+
+/**
+ * Menú de filtro como el de Excel: lista de valores únicos de la columna (con conteo), casilla
+ * «(Seleccionar todo)», búsqueda y Aceptar / Cancelar. La lista solo ofrece los valores de las filas que
+ * pasan los filtros de las OTRAS columnas, igual que Excel.
+ */
+function abrirFiltroExcel(btn, tipo, c){
+  cerrarFiltroExcel();
+  const F = tipo==='prev' ? _filtPrev : _filtRev;
+  const cuenta = new Map();
+  filasDeTabla(tipo).forEach(tr=>{ if(pasaFiltros(tipo, tr, F, c)){ const v = valorFiltro(tipo, tr, c); cuenta.set(v, (cuenta.get(v)||0)+1); } });
+  const valores = [...cuenta.keys()].sort((a,b)=> a===_VACIO ? 1 : b===_VACIO ? -1 : a.localeCompare(b, 'es', {numeric:true, sensitivity:'base'}));
+  const marcados = new Set(F[c] ? valores.filter(v=>F[c].has(v)) : valores);
+
+  const pop = document.createElement('div'); pop.id = 'fltPop'; pop.className = 'flt-pop';
+  pop.innerHTML = `<input type="search" class="flt-buscar" placeholder="Buscar…" autocomplete="off">
+    <div class="flt-lista">
+      <label class="flt-item flt-todo"><input type="checkbox" id="fltTodo"> <span>(Seleccionar todo)</span></label>
+      ${valores.map((v,i)=>`<label class="flt-item" data-v="${i}"><input type="checkbox" data-i="${i}"> <span>${escapeHtml(v)}</span> <em>${cuenta.get(v)}</em></label>`).join('')}
+    </div>
+    <div class="flt-pie"><button type="button" class="btn btn-sm btn-primary" id="fltOk">Aceptar</button><button type="button" class="btn btn-sm" id="fltCancel">Cancelar</button></div>`;
+  document.body.appendChild(pop);
+
+  const items = [...pop.querySelectorAll('.flt-item[data-v]')];
+  const chkDe = it => it.querySelector('input');
+  const visibles = ()=> items.filter(it=>it.style.display!=='none');
+  const sync = ()=>{
+    const vs = visibles(), n = vs.filter(it=>chkDe(it).checked).length, todo = $('fltTodo');
+    todo.checked = vs.length>0 && n===vs.length; todo.indeterminate = n>0 && n<vs.length;
+    $('fltOk').disabled = items.every(it=>!chkDe(it).checked);
+  };
+  items.forEach(it=>{ const i = +it.dataset.v; chkDe(it).checked = marcados.has(valores[i]); chkDe(it).onchange = sync; });
+  $('fltTodo').onchange = e=>{ visibles().forEach(it=>{ chkDe(it).checked = e.target.checked; }); sync(); };
+
+  let respaldo = null;                         // estado de las casillas antes de buscar (para restaurarlo al borrar la búsqueda)
+  pop.querySelector('.flt-buscar').oninput = e=>{
+    const q = _normTxt(e.target.value).trim();
+    if(q && !respaldo) respaldo = items.map(it=>chkDe(it).checked);
+    items.forEach((it,k)=>{
+      const coincide = !q || _normTxt(valores[+it.dataset.v]).includes(q);
+      it.style.display = coincide ? '' : 'none';
+      if(q) chkDe(it).checked = coincide;      // como Excel: al buscar quedan marcados solo los resultados
+      else if(respaldo) chkDe(it).checked = respaldo[k];
+    });
+    if(!q) respaldo = null;
+    sync();
+  };
+  $('fltCancel').onclick = cerrarFiltroExcel;
+  $('fltOk').onclick = ()=>{
+    const sel = new Set(items.filter(it=>chkDe(it).checked).map(it=>valores[+it.dataset.v]));
+    if(sel.size === valores.length) delete F[c]; else F[c] = sel;      // todo marcado = sin filtro
+    cerrarFiltroExcel();
+    btn.classList.toggle('activo', !!F[c]);
+    if(tipo==='prev') aplicarFiltroPreview(); else aplicarFiltroRevision();
+    // el botón "Limpiar filtros" aparece o desaparece según haya filtros
+    updateExcelPreview();
+  };
+  sync();
+
+  // posición: debajo del botón, sin salirse de la pantalla
+  const r = btn.getBoundingClientRect(), anchoPop = 240;
+  pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth-anchoPop-8)) + 'px';
+  pop.style.top = Math.min(r.bottom+4, window.innerHeight-pop.offsetHeight-8) + 'px';
+  setTimeout(()=>{
+    document.addEventListener('mousedown', _fltFuera, true);
+    document.addEventListener('keydown', _fltTecla, true);
+    window.addEventListener('scroll', _fltScroll, true);
+    window.addEventListener('resize', cerrarFiltroExcel);
+    pop.querySelector('.flt-buscar').focus();
+  }, 0);
 }
 
 function ensureOption(selId, value){
