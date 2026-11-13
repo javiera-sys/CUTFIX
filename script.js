@@ -2655,11 +2655,15 @@ function procesarFilasExcel(rows, map, opts){
 
 let _excelFileName = 'excel';
 let _excelDesmarcadas = new Set();   // filas del Excel que el usuario desmarcó (no se cortan); todas vienen marcadas por defecto
+let _filtPrev = {cols:{}, cortar:''};      // filtros de la Vista previa (texto por columna + marcadas/desmarcadas)
+let _filtRev  = {cols:{}, estado:''};      // filtros de la Revisión antes de importar
+const _normTxt = t => String(t==null?'':t).toLowerCase();
 
 $('excelFile').onchange = (e)=>{
   const file = e.target.files[0]; if(!file) return;
   _excelFileName = file.name;
   _excelDesmarcadas = new Set();
+  _filtPrev = {cols:{}, cortar:''}; _filtRev = {cols:{}, estado:''};
   const reader = new FileReader();
   reader.onload = evt=>{
     try{
@@ -2746,8 +2750,14 @@ function updateExcelPreview(){
 
   const thead = $('excelPreviewTable').querySelector('thead');
   const tbody = $('excelPreviewTable').querySelector('tbody');
-  thead.innerHTML = '<tr>' + cols.map(c=>`<th>${escapeHtml(String(c))}</th>`).join('') +
-    '<th class="col-cortar"><label class="chk-cortar-all"><input type="checkbox" id="chkCortarTodas"> Cortar</label></th></tr>';
+  thead.innerHTML = '<tr>' + cols.map((c,j)=>`<th>${escapeHtml(String(c))}<input class="flt" data-j="${j}" placeholder="Filtrar" value="${escapeHtml(_filtPrev.cols[j]||'')}"></th>`).join('') +
+    `<th class="col-cortar"><label class="chk-cortar-all"><input type="checkbox" id="chkCortarTodas"> Cortar</label>
+      <select class="flt" id="fltCortar"><option value="">Todas</option><option value="marcadas">Marcadas</option><option value="desmarcadas">Desmarcadas</option></select>
+      <button type="button" class="flt-limpiar" id="btnLimpiarPrev">Limpiar filtros</button></th></tr>`;
+  thead.querySelectorAll('input.flt').forEach(inp=>{ inp.oninput = ()=>{ _filtPrev.cols[inp.dataset.j] = inp.value; aplicarFiltroPreview(); }; });
+  $('fltCortar').value = _filtPrev.cortar;
+  $('fltCortar').onchange = e=>{ _filtPrev.cortar = e.target.value; aplicarFiltroPreview(); };
+  $('btnLimpiarPrev').onclick = ()=>{ _filtPrev = {cols:{}, cortar:''}; updateExcelPreview(); };
   tbody.innerHTML = '';
   const mapped = Object.values(mapping);
   okAll.forEach(x=>{
@@ -2755,6 +2765,7 @@ function updateExcelPreview(){
     const tr = document.createElement('tr');
     const off = _excelDesmarcadas.has(x.fila);
     if(off) tr.className = 'fila-desmarcada';
+    tr.dataset.fila = x.fila;
     tr.innerHTML = cols.map((_,j)=>{
       const val = row[j]===undefined ? '' : row[j];
       return `<td style="${mapped.includes(j)?'background:#f0f9ff':''}">${escapeHtml(String(val))}</td>`;
@@ -2767,7 +2778,7 @@ function updateExcelPreview(){
     tr.innerHTML = `<td colspan="${cols.length+1}" style="text-align:center;color:#94a3b8;padding:18px">Ningún renglón entra a corte con las unidades indicadas.</td>`;
     tbody.appendChild(tr);
   }
-  $('excelRowCount').textContent = `(${okAll.length} piezas a cortar de ${rows.length-1} filas · ${marcadas.length} marcadas)`;
+  $('excelRowCount').dataset.base = `${okAll.length} piezas a cortar de ${rows.length-1} filas · ${marcadas.length} marcadas`;
   $('excelPreviewCard').style.display='block';
 
   // Casillas: marcar / desmarcar cada pieza y "Cortar" general en el encabezado
@@ -2780,15 +2791,18 @@ function updateExcelPreview(){
   });
   const all = $('chkCortarTodas');
   if(all){
-    all.checked = okAll.length>0 && marcadas.length===okAll.length;
-    all.indeterminate = marcadas.length>0 && marcadas.length<okAll.length;
-    all.disabled = !okAll.length;
+    // "Cortar" del encabezado: marca o desmarca SOLO las filas que se ven con el filtro activo
     all.onchange = ()=>{
-      if(all.checked) _excelDesmarcadas.clear();
-      else okAll.forEach(x=>_excelDesmarcadas.add(x.fila));
+      const marcar = all.checked;
+      tbody.querySelectorAll('tr[data-fila]').forEach(tr=>{
+        if(tr.style.display==='none') return;
+        const f = +tr.dataset.fila;
+        if(marcar) _excelDesmarcadas.delete(f); else _excelDesmarcadas.add(f);
+      });
       updateExcelPreview();
     };
   }
+  aplicarFiltroPreview();
   $('btnConfirmImport').disabled = marcadas.length===0;
   if(wrapPrev){ wrapPrev.scrollTop = scrollPrev; wrapPrev.scrollLeft = scrollPrevX; }
 
@@ -2799,9 +2813,15 @@ function updateExcelPreview(){
     `<b>${ok.length}</b> renglones entran a optimización (${piezasTot} piezas para ${muebles} mueble${muebles>1?'s':''}) · ${ign} ignorados por unidad · ${err} con error` +
     (desm ? ` · ${desm} desmarcado${desm>1?'s':''} por el usuario` : '') +
     (res.warnings.length ? '<br>⚠️ ' + res.warnings.slice(0,12).map(escapeHtml).join('<br>⚠️ ') + (res.warnings.length>12?`<br>… y ${res.warnings.length-12} más`:'') : '');
-  $('excelReviewTable').querySelector('thead').innerHTML =
-    '<tr><th>Fila</th><th>Descripción</th><th>Unidad</th><th>Material</th><th>Esp. (mm)</th><th>Cant.</th><th>Veta</th>'+
-    '<th>Ancho orig → final</th><th>Tol. ancho</th><th>Largo orig → final</th><th>Tol. largo</th><th>Estado</th></tr>';
+  const titRev = ['Fila','Descripción','Unidad','Material','Esp. (mm)','Cant.','Veta','Ancho orig → final','Tol. ancho','Largo orig → final','Tol. largo'];
+  const theadRev = $('excelReviewTable').querySelector('thead');
+  theadRev.innerHTML = '<tr>' + titRev.map((t,c)=>`<th>${t}<input class="flt" data-c="${c}" placeholder="Filtrar" value="${escapeHtml(_filtRev.cols[c]||'')}"></th>`).join('') +
+    `<th>Estado<select class="flt" id="fltEstadoRev"><option value="">Todos</option><option value="entra">Entra</option><option value="desmarcada">Desmarcada</option><option value="ignorada">Ignorada</option><option value="error">Error</option></select>
+      <button type="button" class="flt-limpiar" id="btnLimpiarRev">Limpiar filtros</button></th></tr>`;
+  theadRev.querySelectorAll('input.flt').forEach(inp=>{ inp.oninput = ()=>{ _filtRev.cols[inp.dataset.c] = inp.value; aplicarFiltroRevision(); }; });
+  $('fltEstadoRev').value = _filtRev.estado;
+  $('fltEstadoRev').onchange = e=>{ _filtRev.estado = e.target.value; aplicarFiltroRevision(); };
+  $('btnLimpiarRev').onclick = ()=>{ _filtRev = {cols:{}, estado:''}; updateExcelPreview(); };
   const rb = $('excelReviewTable').querySelector('tbody');
   rb.innerHTML = '';
   res.items.slice(0,400).forEach(x=>{
@@ -2809,6 +2829,7 @@ function updateExcelPreview(){
     const apagada = x.estado==='ok' && _excelDesmarcadas.has(x.fila);
     const bg = (x.estado==='ignorada' || apagada) ? '#f1f5f9;color:#94a3b8' : x.estado==='error' ? '#fee2e2' : '';
     tr.style.cssText = bg ? 'background:'+bg : '';
+    tr.dataset.estado = apagada ? 'desmarcada' : x.estado==='ok' ? 'entra' : x.estado;
     const med = (o,f,t)=> x.estado==='ok' ? `${fmt(o,1)} → <b>${fmt(f,1)}</b>` : '';
     tr.innerHTML = `<td>${x.fila}</td><td>${escapeHtml(x.nombre)}</td><td>${escapeHtml(x.unidad)}</td><td>${escapeHtml(x.material)}</td>`+
       `<td>${x.estado==='ok'?fmt(x.espesor,1):''}</td><td>${x.estado==='ok'?x.cantidad:''}</td><td>${x.estado==='ok'?x.veta:''}</td>`+
@@ -2818,7 +2839,43 @@ function updateExcelPreview(){
     rb.appendChild(tr);
   });
   $('excelReviewCard').style.display='block';
+  aplicarFiltroRevision();
   if(wrapRev) wrapRev.scrollTop = scrollRev;
+}
+
+/** Aplica los filtros de la Vista previa (solo oculta/muestra filas; no cambia qué se importa). */
+function aplicarFiltroPreview(){
+  const tbody = $('excelPreviewTable').querySelector('tbody');
+  let vis = 0, tot = 0, visMarc = 0;
+  tbody.querySelectorAll('tr[data-fila]').forEach(tr=>{
+    tot++;
+    const chk = tr.querySelector('.chk-cortar');
+    let ok = true;
+    for(const [j,t] of Object.entries(_filtPrev.cols)){
+      if(t && !_normTxt(tr.children[+j].textContent).includes(_normTxt(t))){ ok = false; break; }
+    }
+    if(ok && _filtPrev.cortar==='marcadas' && !chk.checked) ok = false;
+    if(ok && _filtPrev.cortar==='desmarcadas' && chk.checked) ok = false;
+    tr.style.display = ok ? '' : 'none';
+    if(ok){ vis++; if(chk.checked) visMarc++; }
+  });
+  const all = $('chkCortarTodas');
+  if(all){ all.checked = vis>0 && visMarc===vis; all.indeterminate = visMarc>0 && visMarc<vis; all.disabled = vis===0; }
+  const activo = _filtPrev.cortar || Object.values(_filtPrev.cols).some(Boolean);
+  const base = $('excelRowCount').dataset.base || '';
+  $('excelRowCount').textContent = `(${base}${activo ? ` · mostrando ${vis} de ${tot}` : ''})`;
+}
+
+/** Aplica los filtros de la Revisión antes de importar. */
+function aplicarFiltroRevision(){
+  $('excelReviewTable').querySelectorAll('tbody tr').forEach(tr=>{
+    let ok = true;
+    for(const [c,t] of Object.entries(_filtRev.cols)){
+      if(t && !_normTxt(tr.children[+c].textContent).includes(_normTxt(t))){ ok = false; break; }
+    }
+    if(ok && _filtRev.estado && tr.dataset.estado !== _filtRev.estado) ok = false;
+    tr.style.display = ok ? '' : 'none';
+  });
 }
 
 function ensureOption(selId, value){
@@ -3222,7 +3279,16 @@ function renderHabilitados(){
 }
 $('btnHabTodos').onclick = ()=>{ STATE.habilitados.forEach(h=>h.incluir=true); renderHabilitados(); renderPiezas(); };
 $('btnHabNinguno').onclick = ()=>{ STATE.habilitados.forEach(h=>h.incluir=false); renderHabilitados(); renderPiezas(); };
-$('btnHabCalcular').onclick = ()=> document.querySelector('.nav-btn[data-section="optimizacion"]').click();
+// Flujo: Habilitados → Parámetros (se definen antes de calcular) → Optimización
+$('btnHabCalcular').querySelector('span').textContent = 'Ir a parámetros';
+$('btnHabCalcular').onclick = ()=> document.querySelector('.nav-btn[data-section="parametros"]').click();
+(function(){
+  const sec = $('sec-parametros'); if(!sec || $('btnParamContinuar')) return;
+  const d = document.createElement('div'); d.className = 'form-actions';
+  d.innerHTML = '<button class="btn btn-primary" id="btnParamContinuar"><svg class="ico" aria-hidden="true"><use href="#i-bolt"/></svg><span>Continuar a optimización</span></button>';
+  sec.appendChild(d);
+  $('btnParamContinuar').onclick = ()=> document.querySelector('.nav-btn[data-section="optimizacion"]').click();
+})();
 
 /* =========================================================
    PROYECTOS (localStorage)
@@ -3404,7 +3470,7 @@ const TUT_ILL = {
    `<rect x="92" y="38" width="248" height="50" rx="8" fill="#fff" stroke="#9db0d6"/><text x="100" y="52" font-size="8.5" fill="#18212f">«Tablero de 2440 por 1220, melamina blanca,</text><text x="100" y="64" font-size="8.5" fill="#18212f">de 18 de grosor. Necesito cortar 20 piezas</text><text x="100" y="76" font-size="8.5" fill="#18212f">de 600 por 400 y 5 piezas de 800 por 300»</text>`+
    tB(92,96,80,'Interpretar')+`<g font-size="8.5"><rect x="92" y="122" width="248" height="18" fill="#fff4c2" stroke="#e0a800"/><text x="98" y="134" fill="#18212f">Tablero · Melamina · 2440×1220 · 18 mm · cant. 10 (asumida)</text><rect x="92" y="140" width="248" height="16" fill="#fff" stroke="#e2e8f1"/><text x="98" y="151" fill="#18212f">Pieza · 600×400 · cant. 20      Pieza · 800×300 · cant. 5</text></g>`),
  excel: TUT_W(`<rect x="20" y="42" width="320" height="34" rx="9" fill="#fafbfe" stroke="#9db0d6" stroke-dasharray="4 3"/><text x="180" y="63" font-size="10" fill="#2358e6" text-anchor="middle" font-weight="700">📄 Elegir archivo .xlsx / .xls</text>`+tF(20,100,90,'Unidades válidas','HOJA')+tF(120,100,90,'Muebles','20')+tF(220,100,110,'Unidad de medida','Centímetros')+tB(20,134,120,'✓ Importar registros','#16a34a')),
- hab: TUT_W(tTab([['Incluir','Habilitado','Renglones','Muebles','Total']]).replace('','')+`<g>${[['☑','IFD4221BFF','12','20','240'],['☐','IFD5530XA','9','5','45']].map((r,i)=>`<rect x="20" y="${62+i*22}" width="320" height="22" fill="#fff" stroke="#e2e8f1" opacity="${i?.5:1}"/>`+r.map((c,j)=>`<text x="${28+j*64}" y="${76+i*22}" font-size="9" fill="#18212f">${c}</text>`).join('')).join('')}</g>`+tB(20,126,120,'Ir a calcular el corte')),
+ hab: TUT_W(tTab([['Incluir','Habilitado','Renglones','Muebles','Total']]).replace('','')+`<g>${[['☑','IFD4221BFF','12','20','240'],['☐','IFD5530XA','9','5','45']].map((r,i)=>`<rect x="20" y="${62+i*22}" width="320" height="22" fill="#fff" stroke="#e2e8f1" opacity="${i?.5:1}"/>`+r.map((c,j)=>`<text x="${28+j*64}" y="${76+i*22}" font-size="9" fill="#18212f">${c}</text>`).join('')).join('')}</g>`+tB(20,126,120,'Ir a parámetros')),
  param: TUT_W(tF(20,46,90,'Kerf (mm)','3')+tF(120,46,90,'Margen perimetral','10')+tF(220,46,110,'Separación mínima','3')+tF(20,90,90,'Rotación global','No')+tF(120,90,90,'Respetar veta','Sí')+tF(220,90,110,'Criterio','Menos tableros')+`<text x="20" y="140" font-size="8.5" fill="#627086">El kerf y la tolerancia son independientes: no se suman dos veces.</text>`),
  opt: TUT_W(tB(20,42,100,'↕ POR LONGITUD','#627086')+tB(130,42,100,'↔ POR ANCHURA','#627086')+tB(240,42,100,'⚡ ÓPTIMO')+`<rect x="20" y="76" width="320" height="22" fill="#f6f8fc" stroke="#e2e8f1"/>`+['Modo','Tableros','Aprov.','Cortes'].map((t,i)=>`<text x="${28+i*80}" y="90" font-size="8.5" font-weight="700" fill="#4a5972">${t}</text>`).join('')+`<rect x="20" y="98" width="320" height="22" fill="#e8f8ee" stroke="#9bdcb4"/>`+['Mixto','9','73.4%','41'].map((t,i)=>`<text x="${28+i*80}" y="112" font-size="9" font-weight="700" fill="#14622f">${t}</text>`).join('')+`<rect x="20" y="132" width="320" height="6" rx="3" fill="#e3e9f4"/><rect x="20" y="132" width="230" height="6" rx="3" fill="#2358e6"/>`),
  planos: TUT_W(`<rect x="20" y="36" width="90" height="16" rx="8" fill="#e8eefd"/><text x="65" y="47" font-size="8" fill="#2358e6" text-anchor="middle" font-weight="700">Tablero 1 ▾</text>`+tB(120,34,64,'⟳ Girar 90°','#fff').replace('fill="#fff"/>','fill="#fff" stroke="#9db0d6"/>').replace(/font-size="9" font-weight="700" fill="#fff"/,'font-size="9" font-weight="700" fill="#2b3850"')+tB(192,34,50,'Zoom +','#fff').replace('fill="#fff"/>','fill="#fff" stroke="#9db0d6"/>')+tBoard(60,62,240,96,[[4,4,150,56,'#9fd8e4','#1 Panel'],[4,62,150,30,'#9fd8e4','#2 Panel'],[158,4,76,40,'#c4b0e8','#3'],[158,48,76,44,'#c4b0e8','#4']])+`<rect x="60" y="62" width="240" height="96" fill="none" stroke="#94a3b8" stroke-dasharray="4 3"/>`),
@@ -3430,7 +3496,7 @@ const TUTORIAL = [
   pasos:['Elige el archivo.','Revisa el mapeo de columnas (descripción, cantidad, ancho, largo, grueso, material, unidad, veta y tolerancias).','Escribe las unidades que se optimizan (por defecto HOJA), el nombre del habilitado y cuántos muebles son.','Indica si las medidas del Excel están en cm o mm y revisa la tabla de revisión.','Pulsa «Importar registros».'],
   tips:['Los renglones con otra unidad se ignoran y se marcan en gris.','Los errores (falta ancho, largo, material…) salen en rojo.','Una tolerancia solo se suma si está escrita como +número, por ejemplo +2.'],tip:'Si importas el mismo archivo dos veces, no se duplican las piezas.'},
  {id:'habilitados',tab:'Habilitados',titulo:'Habilitados',go:'habilitados',ill:'hab',lead:'Cada Excel importado es un habilitado (un modelo de mueble). Aquí decides cuántos muebles necesitas de cada uno.',
-  pasos:['Marca «Incluir en el corte» en los habilitados que quieres cortar juntos.','Escribe la cantidad de muebles; el total de piezas se actualiza al momento.','Usa «Juntar todos» o «Quitar todos» para marcar de golpe.','Pulsa «Ir a calcular el corte».'],tips:['Puedes renombrar o eliminar un habilitado con los iconos.','Cortar varios juntos aprovecha mejor los tableros.'],tip:'Si cambias muebles después de calcular, los planos avisan que están desactualizados.'},
+  pasos:['Marca «Incluir en el corte» en los habilitados que quieres cortar juntos.','Escribe la cantidad de muebles; el total de piezas se actualiza al momento.','Usa «Juntar todos» o «Quitar todos» para marcar de golpe.','Pulsa «Ir a parámetros» para definir kerf, márgenes y criterio antes de calcular.'],tips:['Puedes renombrar o eliminar un habilitado con los iconos.','Cortar varios juntos aprovecha mejor los tableros.'],tip:'Si cambias muebles después de calcular, los planos avisan que están desactualizados.'},
  {id:'param',tab:'Parámetros',titulo:'Parámetros de corte',go:'parametros',ill:'param',lead:'Ajustes que se aplican a todos los métodos de optimización.',
   pasos:['Kerf: el grosor del disco de la sierra (se descuenta entre piezas).','Margen perimetral, separación mínima y margen de seguridad: espacio libre en bordes.','Tolerancias y compensación de corte para ajustar medidas.','Rotación global y «Respetar veta siempre» controlan cómo se pueden girar las piezas.','Criterio de prioridad: menos tableros, menos desperdicio, menor costo o menos cortes.'],tips:['El kerf y la tolerancia son independientes.','Los valores se guardan solos en tu navegador.'],tip:'Cambiar un parámetro después de calcular requiere recalcular.'},
  {id:'opt',tab:'Optimización',titulo:'Optimización',go:'optimizacion',ill:'opt',lead:'Elige cómo quieres cortar. CUTFIX PRO te muestra qué tanto aprovecha el material.',
