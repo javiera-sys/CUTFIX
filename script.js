@@ -80,7 +80,7 @@ function renderTableros(){
       <td>$${fmt(t.precio,2)}</td>
       <td><span style="display:inline-block;width:16px;height:16px;border-radius:4px;border:1px solid #ccc;background:${t.color}"></span></td>
       <td>${t.veta}</td>
-      <td>${t.cantidad}</td>
+      <td>${sinStock() ? '<span class="muted" title="Sin stock: cantidad ilimitada">∞</span>' : t.cantidad}</td>
       <td class="actions">
         <button class="icon-btn" data-edit="${t.id}" title="Editar">${ico('edit')}</button>
         <button class="icon-btn" data-dup="${t.id}" title="Duplicar">${ico('copy')}</button>
@@ -91,9 +91,28 @@ function renderTableros(){
   tbody.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>loadTableroForm(b.dataset.edit));
   tbody.querySelectorAll('[data-dup]').forEach(b=>b.onclick=()=>{dupTablero(b.dataset.dup);});
   tbody.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{delTablero(b.dataset.del);});
-  $('statTableros').textContent = STATE.tableros.reduce((a,t)=>a+t.cantidad,0);
+  refrescarModoStock();
   saveAuto();
 }
+
+/** Sincroniza la casilla «No tengo stock», su aviso y el contador del inicio. */
+function refrescarModoStock(){
+  const on = sinStock();
+  const chk = $('chkSinStock'); if(chk) chk.checked = on;
+  const aviso = $('avisoSinStock'); if(aviso) aviso.style.display = on ? 'block' : 'none';
+  const sec = $('sec-tableros'); if(sec) sec.classList.toggle('sin-stock', on);
+  const st = $('statTableros');
+  if(st){
+    st.textContent = on ? '∞' : STATE.tableros.reduce((a,t)=>a+t.cantidad,0);
+    if(st.nextElementSibling) st.nextElementSibling.textContent = on ? 'sin límite (sin stock)' : 'disponibles';
+  }
+}
+if($('chkSinStock')) $('chkSinStock').addEventListener('change', e=>{
+  STATE.params.sinStock = e.target.checked;
+  renderTableros();                    // refresca columna de cantidad, contador y guarda
+  actualizarAvisoResultado();          // el resultado mostrado queda desactualizado
+  toast(e.target.checked ? 'Sin stock: se calcula con tableros ilimitados' : 'Con stock: se respeta la cantidad de cada tablero', 'info');
+});
 
 function loadTableroForm(id){
   const t = STATE.tableros.find(x=>x.id===id); if(!t) return;
@@ -302,6 +321,7 @@ function loadParamsUI(){
   $('prVeta').value=String(STATE.params.veta);
   $('prCriterio').value=STATE.params.criterio;
   $('prNombreGuion').value=String(STATE.params.nombreGuion !== false);
+  refrescarModoStock();
 }
 
 /* =========================================================
@@ -385,6 +405,9 @@ function totalPiezasHab(h){
 const TABLEROS_MAX = 100000;
 const TABLEROS_AUTO_CANT = 1000;
 
+/** Modo "sin stock": los tableros son ilimitados y se calcula solo con las piezas y los muebles. (Activo por defecto.) */
+const sinStock = () => STATE.params.sinStock !== false;
+
 function expandPieces(){
   const grouped = {};
   STATE.piezas.forEach(p=>{
@@ -420,6 +443,14 @@ function getTablerosFor(material, espesor, maxUtiles){
   // Sin este tope, una cantidad enorme (p. ej. 1,000,000,000) crearía millones de objetos y el
   // navegador se quedaba sin memoria ("Out of Memory").
   const tope = Math.max(1, Math.min(Math.floor(+maxUtiles) || TABLEROS_MAX, TABLEROS_MAX));
+  if(sinStock()){
+    // Sin stock: la cantidad registrada se ignora (ilimitado). Se usa la medida y veta del primer tablero
+    // registrado de ese material/espesor; si no hay ninguno, el estándar 2440×1220 con veta a lo largo.
+    const base = list[0] || { id:'std_'+material+'_'+espesor, nombre:material+' (estándar)', material, espesor:+espesor,
+      largo:2440, ancho:1220, precio:0, color:'#c8a878', veta:'largo', margen:0 };
+    for(let i=0;i<tope;i++) expanded.push({...base, cantidad:tope, instanceIdx:i});
+    return expanded;
+  }
   list.forEach(t=>{
     const n = Math.min(Math.floor(+t.cantidad) || 0, tope);
     for(let i=0;i<n;i++) expanded.push({...t, instanceIdx:i});
@@ -1501,7 +1532,7 @@ function actualizarAvisoResultado(){
 }
 
 function ejecutarOptimizacion(estrategias){
-  if(STATE.tableros.length === 0){ toast('Registra al menos un tablero','error'); return; }
+  if(!sinStock() && STATE.tableros.length === 0){ toast('Registra al menos un tablero (o activa «No tengo stock» en Tableros)','error'); return; }
   if(STATE.piezas.length === 0){ toast('Registra al menos una pieza','error'); return; }
   if(!STATE.piezas.some(p=>cantidadTotal(p)>0)){ toast('No hay piezas para cortar: revisa los habilitados incluidos y su cantidad de muebles','error'); return; }
   const bar = $('optProgress');
@@ -3037,7 +3068,7 @@ $('btnConfirmImport').onclick = ()=>{
   let nuevos = 0;
   combos.forEach(k=>{
     const [mat, esp] = k.split('|'); const e = +esp;
-    if(!STATE.tableros.some(t=>t.material===mat && +t.espesor===e)){
+    if(!sinStock() && !STATE.tableros.some(t=>t.material===mat && +t.espesor===e)){
       STATE.tableros.push({id:uid(), nombre:`${mat} (auto)`, material:mat, largo:2440, ancho:1220,
         espesor:e, precio:0, color:'#c8a878', veta:'largo', cantidad:TABLEROS_AUTO_CANT, margen:0});
       nuevos++;
@@ -3186,7 +3217,7 @@ $('btnLoteConfirmar').onclick = ()=>{
   let nuevosTab = 0;
   combos.forEach(k=>{
     const [mat, esp] = k.split('|'); const e = +esp;
-    if(!STATE.tableros.some(t=>t.material===mat && +t.espesor===e)){
+    if(!sinStock() && !STATE.tableros.some(t=>t.material===mat && +t.espesor===e)){
       STATE.tableros.push({id:uid(), nombre:`${mat} (auto)`, material:mat, largo:2440, ancho:1220,
         espesor:e, precio:0, color:'#c8a878', veta:'largo', cantidad:TABLEROS_AUTO_CANT, margen:0});
       nuevosTab++;
