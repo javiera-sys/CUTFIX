@@ -102,6 +102,15 @@
     <div class="form-actions" style="margin-top:14px"><button class="btn btn-outline btn-voz" data-voz-abrir type="button"><svg class="ico" aria-hidden="true"><use href="#i-mic"/></svg><span>Dictar por voz</span></button></div>
   </header>
 
+  <div class="card stock-card">
+    <label class="stock-toggle">
+      <input type="checkbox" id="chkSinStock" checked>
+      <span><b>No tengo stock de tableros</b> — calcular con tableros ilimitados</span>
+    </label>
+    <p id="avisoSinStock" class="stock-note">Solo se usan las piezas del Excel y la cantidad de muebles; el resultado indica cuántos tableros hay que pedir.
+      No hace falta registrar tableros: se usa el estándar 2440×1220 (veta a lo largo). Si registras uno de ese material y espesor, se usa su medida, veta y margen, y su cantidad se ignora.</p>
+  </div>
+
   <div class="card">
     <h3 id="formTabTitle">Agregar tablero</h3>
     <div class="form-grid">
