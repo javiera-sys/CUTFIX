@@ -119,6 +119,8 @@ function clearTableroForm(){
 /** Validación de un tablero (la usan el formulario manual y el dictado por voz). Devuelve el mensaje de error o null. */
 function validarTablero(t){
   if(!(t.largo>0) || !(t.ancho>0)) return 'Dimensiones inválidas';
+  if(!(t.cantidad>=1)) return 'La cantidad disponible debe ser al menos 1';
+  if(t.cantidad > TABLEROS_MAX) return 'Cantidad demasiado grande (máximo '+TABLEROS_MAX.toLocaleString('es-MX')+' tableros)';
   return null;
 }
 /** Validación de una pieza (formulario manual y dictado por voz). */
@@ -379,6 +381,10 @@ function totalPiezasHab(h){
   return STATE.piezas.filter(p=>p.habId===h.id).reduce((n,p)=>n+Math.ceil(+(p.cantidad*(+h.muebles||0)).toFixed(6)),0);
 }
 
+/** Límite de tableros por tipo (protege la memoria del navegador) y cantidad por defecto de los "(auto)". */
+const TABLEROS_MAX = 100000;
+const TABLEROS_AUTO_CANT = 1000;
+
 function expandPieces(){
   const grouped = {};
   STATE.piezas.forEach(p=>{
@@ -407,10 +413,17 @@ function expandPieces(){
 /**
  * Filtra tableros disponibles para un material+espesor.
  */
-function getTablerosFor(material, espesor){
+function getTablerosFor(material, espesor, maxUtiles){
   const list = STATE.tableros.filter(t => t.material===material && +t.espesor === +espesor);
   const expanded = [];
-  list.forEach(t=>{ for(let i=0;i<t.cantidad;i++) expanded.push({...t, instanceIdx:i}); });
+  // Nunca se pueden usar más tableros que piezas por colocar (cada tablero usado lleva al menos una).
+  // Sin este tope, una cantidad enorme (p. ej. 1,000,000,000) crearía millones de objetos y el
+  // navegador se quedaba sin memoria ("Out of Memory").
+  const tope = Math.max(1, Math.min(Math.floor(+maxUtiles) || TABLEROS_MAX, TABLEROS_MAX));
+  list.forEach(t=>{
+    const n = Math.min(Math.floor(+t.cantidad) || 0, tope);
+    for(let i=0;i<n;i++) expanded.push({...t, instanceIdx:i});
+  });
   return expanded;
 }
 
@@ -1298,7 +1311,7 @@ function runMode(modeName){
 
   Object.entries(grouped).forEach(([key, group])=>{
     let remaining = [...group.pieces];
-    const available = getTablerosFor(group.material, group.espesor);
+    const available = getTablerosFor(group.material, group.espesor, group.pieces.length);
     let boardIdx = 0;
 
     // Validación: pieza más grande que el tablero
@@ -3026,7 +3039,7 @@ $('btnConfirmImport').onclick = ()=>{
     const [mat, esp] = k.split('|'); const e = +esp;
     if(!STATE.tableros.some(t=>t.material===mat && +t.espesor===e)){
       STATE.tableros.push({id:uid(), nombre:`${mat} (auto)`, material:mat, largo:2440, ancho:1220,
-        espesor:e, precio:0, color:'#c8a878', veta:'largo', cantidad:50, margen:0});
+        espesor:e, precio:0, color:'#c8a878', veta:'largo', cantidad:TABLEROS_AUTO_CANT, margen:0});
       nuevos++;
     }
   });
@@ -3175,7 +3188,7 @@ $('btnLoteConfirmar').onclick = ()=>{
     const [mat, esp] = k.split('|'); const e = +esp;
     if(!STATE.tableros.some(t=>t.material===mat && +t.espesor===e)){
       STATE.tableros.push({id:uid(), nombre:`${mat} (auto)`, material:mat, largo:2440, ancho:1220,
-        espesor:e, precio:0, color:'#c8a878', veta:'largo', cantidad:50, margen:0});
+        espesor:e, precio:0, color:'#c8a878', veta:'largo', cantidad:TABLEROS_AUTO_CANT, margen:0});
       nuevosTab++;
     }
   });
