@@ -2066,6 +2066,26 @@ function hslColorFromString(str){
 // <<PLANO-END
 
 // <<PDF-START (sin DOM; se prueba por separado)
+/**
+ * Flecha de veta en PDF (misma lógica que la vista previa SVG): vertical apunta hacia abajo, horizontal hacia la derecha.
+ * r: rectángulo de la pieza ya en la hoja (mm); vertical: sentido de la veta tras rotación de pieza y giro del dibujo.
+ * La vertical va junto al borde derecho (el izquierdo lo usa la cota de la medida); la horizontal, junto al borde inferior.
+ */
+function flechaVetaPdf(doc, r, vertical){
+  if(r.w < 9 || r.h < 9) return;                       // pieza demasiado pequeña para dibujar la flecha
+  const cab = 1.8, med = 0.8;                          // largo y semiancho de la punta (mm)
+  doc.setDrawColor(124,45,18); doc.setFillColor(124,45,18); doc.setLineWidth(0.3);
+  if(vertical){
+    const x = r.x + r.w - 2.6, y1 = r.y + r.h*0.2, y2 = r.y + r.h*0.8;
+    doc.line(x, y1, x, y2 - cab);
+    doc.triangle(x - med, y2 - cab, x + med, y2 - cab, x, y2, 'F');
+  } else {
+    const y = r.y + r.h - 2.6, x1 = r.x + r.w*0.2, x2 = r.x + r.w*0.8;
+    doc.line(x1, y, x2 - cab, y);
+    doc.triangle(x2 - cab, y - med, x2 - cab, y + med, x2, y, 'F');
+  }
+  doc.setDrawColor(15,23,42); doc.setLineWidth(0.2);   // restaura el trazo de las piezas
+}
 /** Rectángulo punteado en PDF: cada trazo es una línea vectorial independiente (no depende del patrón de guiones del visor). */
 function rectPunteadoPdf(doc,x,y,w,h,rgb,lw,dash,gap){
   doc.setDrawColor(...rgb); doc.setLineWidth(lw); doc.setLineDashPattern([],0);
@@ -2403,6 +2423,7 @@ function construirPdfOptimizacion(doc, result, ctx){
       const r = T(p.x, p.y, p.w, p.h);
       doc.setFillColor(...hslAArreglo(hslColorFromString(p.material+p.name)));
       doc.rect(r.x, r.y, r.w, r.h, 'FD');
+      if(p.veta==='largo' || p.veta==='ancho') flechaVetaPdf(doc, r, ((p.veta==='largo') !== !!p.rotated) !== R);   // flecha de veta
       etiquetasPdf(r, R ? p.h : p.w, R ? p.w : p.h, `#${p.n} ${p.name}`);
     });
 
@@ -2424,7 +2445,7 @@ function construirPdfOptimizacion(doc, result, ctx){
       });
     }
     doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(71,85,105);
-    const nota = doc.splitTextToSize('Aquí = piezas de ese corte en ' + (N>1 ? `cada uno de los ${N} tableros de este patrón` : 'este tablero') + '. Se ocupan = total de ese corte en todo el trabajo. Franja roja = separación de sierra (' + kerf + ' mm). S1, S2… = sobrantes (verde: todo el espacio libre, medida ya sin kerf ni margen).', pw-24);
+    const nota = doc.splitTextToSize('Aquí = piezas de ese corte en ' + (N>1 ? `cada uno de los ${N} tableros de este patrón` : 'este tablero') + '. Se ocupan = total de ese corte en todo el trabajo. Franja roja = separación de sierra (' + kerf + ' mm). Flecha café = sentido de la veta. S1, S2… = sobrantes (verde: todo el espacio libre, medida ya sin kerf ni margen).', pw-24);
     doc.text(nota, 12, ph-9.5-(nota.length-1)*3);
   });
 
@@ -3307,6 +3328,8 @@ $('btnPdfPlano').onclick = ()=>{
         const c = hslToRgb(p.material+p.name);
         doc.setFillColor(c.r,c.g,c.b);
         doc.rect(r.x, r.y, r.w, r.h, 'FD');
+        if(p.veta==='largo' || p.veta==='ancho') flechaVetaPdf(doc, r, ((p.veta==='largo') !== !!p.rotated) !== R);   // flecha de veta
+        doc.setDrawColor(0,0,0); doc.setLineWidth(0.2);
         if(r.w > 15 && r.h > 8){
           doc.setFontSize(7);
           doc.text(p.name.substring(0,16), r.x+1, r.y+4);
