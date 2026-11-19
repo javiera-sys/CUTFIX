@@ -1,3 +1,4 @@
+[README.md](https://github.com/user-attachments/files/35113540/README.md)
 [README.md](https://github.com/user-attachments/files/35089505/README.md)
 # ✂️ CUTFIX PRO — Optimizador de tableros
 
@@ -293,6 +294,18 @@ Nada se carga hasta confirmar, y el cálculo nunca se ejecuta solo.
 - Los algoritmos son **heurísticos**: dan buenos resultados, pero no garantizan el óptimo matemático.
 - El guardado automático depende de `localStorage` (se pierde si se borran los datos del navegador); usa «Exportar proyecto» para respaldos.
 - El dictado por voz depende de la compatibilidad del navegador con la Web Speech API.
+
+---
+
+## 📐 Medida de tablero por pieza y grupos de optimización
+
+- En **Importar Excel → Dimensiones del tablero** se elige la medida que recibirán las piezas importadas: **A) 122 × 122 cm**, **B) 244 × 122 cm** (predeterminada) o **C) personalizado** (largo y ancho en cm, usados exactamente como se capturan).
+- En **Piezas** cada renglón tiene su columna **Tablero (cm)** y existe una barra para asignar una medida a todas las piezas de un material. Una pieza «Predeterminado» (proyectos antiguos o captura manual) conserva el comportamiento anterior.
+- Las piezas se guardan con `tabLargo` / `tabAncho` (mm).
+- **Grupo de optimización = material + espesor + largo + ancho del tablero** (`claveGrupo`, usado por `expandPieces`). Nunca se mezclan materiales, espesores ni medidas en un mismo tablero; cada grupo se optimiza por separado con la modalidad elegida.
+- `getTablerosFor(material, espesor, maxUtiles, dim)` entrega tableros con la medida asignada; los algoritmos no cambiaron (ya recibían `board`).
+- Planos SVG y PDF muestran material, espesor, largo y ancho, modalidad y grupo; el resumen cuenta tableros por material, espesor y medida (`resumenPorMaterial`, `totalesTableros`).
+- Si una pieza no cabe, se informa pieza, material y medida; **no** se cambia la medida automáticamente.
 
 ---
 
