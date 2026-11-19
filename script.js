@@ -190,9 +190,84 @@ function delTablero(id){
 /* =========================================================
    PIEZAS
    ========================================================= */
+/* ---------- Selector de medida de tablero (cm en pantalla, mm en los datos) ---------- */
+/** Lee un selector (opción + largo/ancho personalizados). Devuelve {dim:{largo,ancho}|null, error}. */
+function leerDimSelector(opcId, largoId, anchoId){
+  const op = $(opcId).value;
+  if(op==='sq' || op==='std') return { dim:{...TAB_PRESETS[op]}, error:null };
+  const rl = String($(largoId).value).trim(), ra = String($(anchoId).value).trim();
+  if(rl==='' || ra==='') return { dim:null, error:'Captura el largo y el ancho del tablero personalizado' };
+  const L = Number(rl), A = Number(ra);
+  if(!Number.isFinite(L) || !Number.isFinite(A)) return { dim:null, error:'El largo y el ancho del tablero deben ser números' };
+  if(!(L>0) || !(A>0)) return { dim:null, error:'El largo y el ancho del tablero deben ser mayores que cero' };
+  return { dim:{ largo:+(L*10).toFixed(2), ancho:+(A*10).toFixed(2) }, error:null };
+}
+function opcDeDim(d){
+  if(!d) return 'def';
+  if(d.largo===1220 && d.ancho===1220) return 'sq';
+  if(d.largo===2440 && d.ancho===1220) return 'std';
+  return 'custom';
+}
+/** Actualiza el aviso "medida seleccionada" y muestra/oculta los campos personalizados. */
+function refrescarSelectorExcel(){
+  const cust = $('exdOpc').value==='custom';
+  document.querySelectorAll('.exd-cust').forEach(e=>e.style.display = cust ? '' : 'none');
+  const r = leerDimSelector('exdOpc','exdLargo','exdAncho');
+  $('exdSel').innerHTML = r.dim
+    ? `Medida seleccionada: <b>${etiquetaDim(r.dim.largo, r.dim.ancho)}</b> (largo × ancho)`
+    : `<span style="color:#dc2626">${r.error}</span>`;
+}
+['exdOpc','exdLargo','exdAncho'].forEach(id=> $(id).addEventListener('input', refrescarSelectorExcel));
+/** Medida elegida para importar; si es inválida avisa y devuelve undefined. */
+function dimParaImportar(){
+  const r = leerDimSelector('exdOpc','exdLargo','exdAncho');
+  if(r.error){ toast(r.error,'error'); $('dimCard').scrollIntoView({behavior:'smooth', block:'center'}); return undefined; }
+  return r.dim;
+}
+$('btnExdAplicar').onclick = ()=>{
+  const r = leerDimSelector('exdOpc','exdLargo','exdAncho');
+  if(r.error){ toast(r.error,'error'); return; }
+  if(!STATE.piezas.length){ toast('No hay piezas importadas todavía','error'); return; }
+  STATE.piezas.forEach(p=>{ p.tabLargo = r.dim.largo; p.tabAncho = r.dim.ancho; });
+  renderPiezas(); toast(`Tablero ${etiquetaDim(r.dim.largo, r.dim.ancho)} asignado a ${STATE.piezas.length} pieza(s)`,'success');
+};
+
+/* Asignación por material (barra encima de la tabla de piezas) */
+function refrescarBulk(){
+  const sel = $('bkMat'), prev = sel.value;
+  const mats = [...new Set(STATE.piezas.map(p=>p.material))];
+  sel.innerHTML = '<option value="">Todas las piezas</option>' + mats.map(m=>`<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+  if(mats.includes(prev)) sel.value = prev;
+  document.querySelectorAll('.bk-cust').forEach(e=>e.style.display = $('bkOpc').value==='custom' ? '' : 'none');
+}
+$('bkOpc').addEventListener('change', refrescarBulk);
+$('btnBkAplicar').onclick = ()=>{
+  const r = leerDimSelector('bkOpc','bkLargo','bkAncho');
+  if(r.error){ toast(r.error,'error'); return; }
+  const m = $('bkMat').value;
+  const dest = STATE.piezas.filter(p=>!m || p.material===m);
+  if(!dest.length){ toast('No hay piezas para asignar','error'); return; }
+  dest.forEach(p=>{ p.tabLargo = r.dim.largo; p.tabAncho = r.dim.ancho; });
+  renderPiezas(); toast(`Tablero ${etiquetaDim(r.dim.largo, r.dim.ancho)} asignado a ${dest.length} pieza(s)`,'success');
+};
+
+const _tabCustomAbierto = new Set();   // piezas cuya fila muestra los campos de medida personalizada
+function celdaTablero(p){
+  const d = dimTablero(p), op = _tabCustomAbierto.has(p.id) ? 'custom' : opcDeDim(d);
+  const cm = v => d ? +(v/10).toFixed(2) : '';
+  return `<select data-ptab="${p.id}" aria-label="Medida de tablero">`+
+    `<option value="def"${op==='def'?' selected':''}>Predeterminado</option>`+
+    `<option value="sq"${op==='sq'?' selected':''}>122 × 122</option>`+
+    `<option value="std"${op==='std'?' selected':''}>244 × 122</option>`+
+    `<option value="custom"${op==='custom'?' selected':''}>Personalizado</option></select>`+
+    (op==='custom' ? `<div class="tab-cust"><input type="number" min="0" step="any" data-ptl="${p.id}" value="${cm(d&&d.largo)}" placeholder="Largo" aria-label="Largo cm"> × `+
+      `<input type="number" min="0" step="any" data-pta="${p.id}" value="${cm(d&&d.ancho)}" placeholder="Ancho" aria-label="Ancho cm"></div>` : '');
+}
+
 function renderPiezas(){
   const tbody = $('tablaPiezas').querySelector('tbody');
   tbody.innerHTML = '';
+  refrescarBulk();
   STATE.piezas.forEach((p,i)=>{
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -204,6 +279,7 @@ function renderPiezas(){
       <td><b>${cantidadTotal(p)}</b></td>
       <td>${p.espesor}</td>
       <td>${p.material}</td>
+      <td class="col-tab">${celdaTablero(p)}</td>
       <td>${p.veta}</td>
       <td>${p.rot?'Sí':'No'}</td>
       <td>${habilitadoDe(p) ? escapeHtml(habilitadoDe(p).nombre) : '—'}</td>
@@ -228,6 +304,27 @@ function renderPiezas(){
   $('statPiezas').textContent = totalP;
   saveAuto();
 }
+
+$('tablaPiezas').addEventListener('change', ev=>{
+  const t = ev.target, id = t.dataset.ptab || t.dataset.ptl || t.dataset.pta;
+  if(!id) return;
+  const p = STATE.piezas.find(x=>x.id===id); if(!p) return;
+  if(t.dataset.ptab){
+    const v = t.value;
+    if(v==='def'){ _tabCustomAbierto.delete(id); delete p.tabLargo; delete p.tabAncho; }
+    else if(v==='custom'){ _tabCustomAbierto.add(id); }
+    else { _tabCustomAbierto.delete(id); p.tabLargo = TAB_PRESETS[v].largo; p.tabAncho = TAB_PRESETS[v].ancho; }
+    renderPiezas(); return;
+  }
+  const row = t.closest('td');
+  const L = row.querySelector('[data-ptl]').value, A = row.querySelector('[data-pta]').value;
+  if(L==='' || A===''){ return; }   // se espera a que se capturen ambos
+  const nl = Number(L), na = Number(A);
+  if(!Number.isFinite(nl) || !Number.isFinite(na) || !(nl>0) || !(na>0)){ toast('El largo y el ancho del tablero deben ser números mayores que cero','error'); return; }
+  p.tabLargo = +(nl*10).toFixed(2); p.tabAncho = +(na*10).toFixed(2);
+  _tabCustomAbierto.delete(id);
+  renderPiezas();
+});
 
 function loadPiezaForm(id){
   const p = STATE.piezas.find(x=>x.id===id); if(!p) return;
@@ -372,7 +469,7 @@ function textoMuebles(){
 /** Huella de todo lo que influye en el cálculo; si cambia, el resultado mostrado quedó desactualizado. */
 function firmaDatos(){
   return JSON.stringify([
-    STATE.piezas.map(p=>[p.id,p.cantidad,p.largo,p.ancho,p.material,p.espesor,p.veta,p.rot,p.tolAncho,p.tolLargo,p.habId]),
+    STATE.piezas.map(p=>[p.id,p.cantidad,p.largo,p.ancho,p.material,p.espesor,p.veta,p.rot,p.tolAncho,p.tolLargo,p.habId,p.tabLargo,p.tabAncho]),
     (STATE.habilitados||[]).map(h=>[h.id,h.muebles,h.incluir]),
     STATE.tableros.map(t=>[t.id,t.material,t.espesor,t.largo,t.ancho,t.cantidad,t.veta,t.margen]),
     STATE.params
@@ -408,13 +505,35 @@ const TABLEROS_AUTO_CANT = 1000;
 /** Modo "sin stock": los tableros son ilimitados y se calcula solo con las piezas y los muebles. (Activo por defecto.) */
 const sinStock = () => STATE.params.sinStock !== false;
 
+/* ---------- Dimensiones de tablero asignadas por pieza (siempre en mm) ----------
+   tabLargo / tabAncho en la pieza = medida de tablero asignada. Sin asignar = comportamiento anterior
+   (tableros registrados o estándar 2440×1220). */
+const TAB_PRESETS = { sq:{largo:1220, ancho:1220}, std:{largo:2440, ancho:1220} };
+function dimTablero(p){
+  const L = +p.tabLargo, A = +p.tabAncho;
+  return (L>0 && A>0) ? {largo:L, ancho:A} : null;
+}
+/** "244 × 122 cm" (largo × ancho). Recibe mm. */
+function etiquetaDim(largo, ancho, sep){
+  const c = v => String(+(+v/10).toFixed(2));
+  return c(largo) + (sep||' × ') + c(ancho) + ' cm';
+}
+/** Grupo de optimización = material + espesor + largo + ancho del tablero (coincidencia exacta). */
+function claveGrupo(material, espesor, dim){
+  return material + '|' + espesor + (dim ? '|' + dim.largo + 'x' + dim.ancho : '');
+}
+function mismoGrupoTab(a, b){
+  return a.material===b.material && +a.espesor===+b.espesor && +a.ancho===+b.ancho && +a.largo===+b.largo;
+}
+
 function expandPieces(){
   const grouped = {};
   STATE.piezas.forEach(p=>{
     const total = cantidadTotal(p);
     if(total <= 0) return;
-    const key = p.material+'|'+p.espesor;
-    if(!grouped[key]) grouped[key] = {material:p.material, espesor:p.espesor, pieces:[]};
+    const dimP = dimTablero(p);
+    const key = claveGrupo(p.material, p.espesor, dimP);
+    if(!grouped[key]) grouped[key] = {material:p.material, espesor:p.espesor, dim:dimP, pieces:[]};
     for(let i=0;i<total;i++){
       const dim = applyTolerance(p);
       grouped[key].pieces.push({
@@ -436,8 +555,28 @@ function expandPieces(){
 /**
  * Filtra tableros disponibles para un material+espesor.
  */
-function getTablerosFor(material, espesor, maxUtiles){
-  const list = STATE.tableros.filter(t => t.material===material && +t.espesor === +espesor);
+function getTablerosFor(material, espesor, maxUtiles, dim){
+  let list = STATE.tableros.filter(t => t.material===material && +t.espesor === +espesor);
+  if(dim){
+    // Medida asignada: se usa EXACTAMENTE esa medida. Un tablero registrado de otra medida solo aporta veta, color y margen.
+    const exactos = list.filter(t => +t.largo===dim.largo && +t.ancho===dim.ancho);
+    const ref = exactos[0] || list[0];
+    const tope2 = Math.max(1, Math.min(Math.floor(+maxUtiles) || TABLEROS_MAX, TABLEROS_MAX));
+    const out = [];
+    if(sinStock()){
+      const base = exactos[0] ? {...exactos[0]} : {
+        id:'dim_'+material+'_'+espesor+'_'+dim.largo+'x'+dim.ancho, nombre: material+' '+etiquetaDim(dim.largo,dim.ancho),
+        material, espesor:+espesor, largo:dim.largo, ancho:dim.ancho, precio:0,
+        color: ref ? ref.color : '#c8a878', veta: ref ? ref.veta : 'largo', margen: ref ? (ref.margen||0) : 0 };
+      for(let i=0;i<tope2;i++) out.push({...base, cantidad:tope2, instanceIdx:i});
+      return out;
+    }
+    exactos.forEach(t=>{
+      const n = Math.min(Math.floor(+t.cantidad) || 0, tope2);
+      for(let i=0;i<n;i++) out.push({...t, instanceIdx:i});
+    });
+    return out;
+  }
   const expanded = [];
   // Nunca se pueden usar más tableros que piezas por colocar (cada tablero usado lleva al menos una).
   // Sin este tope, una cantidad enorme (p. ej. 1,000,000,000) crearía millones de objetos y el
@@ -1342,20 +1481,23 @@ function runMode(modeName){
 
   Object.entries(grouped).forEach(([key, group])=>{
     let remaining = [...group.pieces];
-    const available = getTablerosFor(group.material, group.espesor, group.pieces.length);
+    const available = getTablerosFor(group.material, group.espesor, group.pieces.length, group.dim);
     let boardIdx = 0;
 
     // Validación: pieza más grande que el tablero
     const validTab = available[0];
     if(!validTab){
-      unplacedAll.push(...remaining.map(p=>({...p, reason:'Sin tablero del material/espesor'})));
+      const tg = group.dim ? {tabLargo:group.dim.largo, tabAncho:group.dim.ancho} : {};
+      unplacedAll.push(...remaining.map(p=>({...p, ...tg, reason:'Sin tablero del material/espesor' + (group.dim ? ' en la medida ' + etiquetaDim(group.dim.largo, group.dim.ancho) + ' (regístralo en Tableros)' : '')})));
       return;
     }
+    const tagDim = {tabLargo:validTab.largo, tabAncho:validTab.ancho};
+    const txtMedida = etiquetaDim(validTab.largo, validTab.ancho);
 
-    // Filtrar piezas que no caben
+    // Filtrar piezas que no caben (no se cambia la medida del tablero: se informa para que el usuario decida)
     remaining = remaining.filter(p=>{
       if(!available.some(b=>pieceFitsInBoard(p, b))){
-        unplacedAll.push({...p, reason:'Pieza más grande que el tablero'});
+        unplacedAll.push({...p, ...tagDim, reason:'Pieza más grande que el tablero de ' + txtMedida});
         return false;
       }
       return true;
@@ -1395,14 +1537,14 @@ function runMode(modeName){
         totalCuts = cortesAntes + glob.cuts;
         remaining = [];
       }
-      infoBusqueda.push({ material: group.material, espesor: group.espesor,
+      infoBusqueda.push({ material: group.material, espesor: group.espesor, largo: validTab.largo, ancho: validTab.ancho,
         metodo: usar ? 'optimizada' : 'convencional',
         verificada: !!glob,                                   // la búsqueda global se ejecutó y no encontró algo mejor
         tablerosConvencional: conv.boards.length, tableros: usar ? glob.boards.length : conv.boards.length,
         cotaInferior: glob ? glob.cotaInferior : 0, optimoDemostrado: glob ? glob.optimoDemostrado : false });
     }
     if(remaining.length > 0){
-      unplacedAll.push(...remaining.map(p=>({...p, reason:'Sin tableros suficientes'})));
+      unplacedAll.push(...remaining.map(p=>({...p, ...tagDim, reason:'Sin tableros suficientes de ' + txtMedida})));
     }
   });
 
@@ -1517,8 +1659,10 @@ function calcularResultados(estrategias, onPaso){
   if(el){
     const sin = STATE.bestResult ? STATE.bestResult.unplaced : [];
     if(sin.length){
-      const mot = [...new Set(sin.map(p=>p.reason||'Sin tablero disponible'))].join('; ');
-      el.innerHTML = `${ico('warn','ico ico-inline')} <b>${sin.length} pieza(s) NO se pudieron colocar</b> (${escapeHtml(mot)}). Si es por falta de tableros, aumenta la cantidad disponible en Tableros y vuelve a calcular.`;
+      const lista = sin.slice(0,8).map(p=>`• ${escapeHtml(p.name)} (${nf(p.ow||p.w)}×${nf(p.oh||p.h)} mm) · ${escapeHtml(p.material)} ${nf(p.espesor)} mm` +
+        (p.tabLargo ? ` · tablero ${etiquetaDim(p.tabLargo,p.tabAncho)}` : '') + ` — ${escapeHtml(p.reason||'Sin tablero disponible')}`).join('<br>');
+      el.innerHTML = `${ico('warn','ico ico-inline')} <b>${sin.length} pieza(s) NO se pudieron colocar</b><br>${lista}${sin.length>8?`<br>… y ${sin.length-8} más`:''}<br>` +
+        `No se cambió ninguna medida de tablero: corrige la pieza o su tablero asignado (sección Piezas) y vuelve a calcular. Si es por falta de tableros, aumenta la cantidad disponible en Tableros.`;
       el.style.display = 'block';
     } else el.style.display = 'none';
   }
@@ -1647,6 +1791,7 @@ let currentPlanData = null;
 function renderPlanoSelector(results){
   const best = pickBest(results);
   STATE.bestResult = best.result;
+  STATE.bestName = best.name;
   const boards = best.result.boards;
   const sel = $('selTableroPlano');
   sel.innerHTML='';
@@ -1808,7 +1953,7 @@ function totalesPorCorte(boards, unplaced){
 /** Numeración del tablero: global y dentro de su material/espesor. */
 function infoTablero(boards, idx, unplaced){
   const b = boards[idx];
-  const mismos = boards.filter(x=>x.board.material===b.board.material && +x.board.espesor===+b.board.espesor);
+  const mismos = boards.filter(x=>mismoGrupoTab(x.board, b.board));
   return { numero: idx+1, total: boards.length, secMat: mismos.indexOf(b)+1, totMat: mismos.length, totales: totalesPorCorte(boards, unplaced) };
 }
 
@@ -1867,7 +2012,7 @@ function construirPlanoSVG(b, info, opts){
   const BW = R ? H : W, BH = R ? W : H;              // tamaño visible del tablero
   const scale = Math.min(860/BW, 760/BH, 1.2);
   const bw = BW*scale, bh = BH*scale;
-  const top = 138, left = 70, right = 30;
+  const top = 156, left = 70, right = 30;
   const svgW = Math.max(left+bw+right, 600);
   const x0 = left + (svgW-left-right-bw)/2, y0 = top;
   // tablero (mm) -> dibujo (px). Con giro: ancho<->largo y eje invertido (90° antihorario), igual que en el PDF.
@@ -1906,10 +2051,11 @@ function construirPlanoSVG(b, info, opts){
   // Encabezado
   s += `<text x="${svgW-20}" y="24" text-anchor="end" font-size="13" font-weight="800" letter-spacing="1.2" fill="#2358e6">CUTFIX PRO</text>`;
   s += `<text x="${left-30}" y="24" font-size="17" font-weight="700" fill="#0f172a">Tablero ${info.numero} de ${info.total} — ${escSvg(board.material)} · espesor ${nf(board.espesor)} mm</text>`;
-  s += `<text x="${left-30}" y="44" font-size="12.5" fill="#334155">Tablero ${info.secMat} de ${info.totMat} de este material · Medidas: ${fmt(W)} × ${fmt(H)} mm (ancho × largo)</text>`;
+  s += `<text x="${left-30}" y="44" font-size="12.5" fill="#334155">Tablero ${info.secMat} de ${info.totMat} de este grupo · Medidas: largo ${fmt(H)} mm × ancho ${fmt(W)} mm (${etiquetaDim(H, W)})</text>`;
   s += `<text x="${left-30}" y="62" font-size="12.5" fill="#334155">Corte de sierra (kerf): ${kerf} mm · Margen perimetral: ${nf(m)} mm · Veta del tablero: ${textoVeta(board.veta)}</text>`;
   s += `<text x="${left-30}" y="80" font-size="12.5" font-weight="600" fill="#166534">${piezas.length} piezas · Aprovechamiento ${aprov.toFixed(1)}% · Sobrante ${(100-aprov).toFixed(1)}% (${fmt((areaTab-areaPiezas)/1e6,2)} m²)</text>`;
 
+  s += `<text x="${left-30}" y="116" font-size="12.5" font-weight="600" fill="#334155">${escSvg(truncTxt(`Modalidad: ${modalidadTexto()} · Grupo: ${board.material} + ${nf(board.espesor)} mm + ${etiquetaDim(H, W)}`, 120))}</text>`;
   const mueb = textoMuebles();
   if(mueb) s += `<text x="${left-30}" y="98" font-size="12.5" font-weight="600" fill="#1d4ed8">${escSvg(truncTxt(mueb,120))}</text>`;
 
@@ -1999,24 +2145,45 @@ function construirPlanoSVG(b, info, opts){
 /** Resumen por material + espesor del resultado de una optimización. */
 function resumenPorMaterial(result){
   const g = {};
-  const get = (mat, esp)=> g[mat+'|'+(+esp)] = g[mat+'|'+(+esp)] || {material:mat, espesor:+esp, medidas:new Set(), cortes:{}, tableros:0, colocadas:0, sinColocar:0, areaPiezas:0, areaTableros:0};
+  const get = (mat, esp, L, A)=>{
+    const k = mat+'|'+(+esp)+'|'+(+L||0)+'x'+(+A||0);
+    return g[k] = g[k] || {material:mat, espesor:+esp, largo:+L||0, ancho:+A||0, cortes:{}, tableros:0, colocadas:0, sinColocar:0, areaPiezas:0, areaTableros:0};
+  };
   result.boards.forEach(b=>{
-    const o = get(b.board.material, b.board.espesor);
-    o.medidas.add(`${fmt(b.board.ancho)}×${fmt(b.board.largo)}`);
+    const o = get(b.board.material, b.board.espesor, b.board.largo, b.board.ancho);
     b.placed.forEach(p=>{ o.cortes[p.name] = (o.cortes[p.name]||0)+1; });
     o.tableros++; o.colocadas += b.placed.length;
     o.areaPiezas += b.placed.reduce((s,p)=>s+p.w*p.h,0);
     o.areaTableros += b.board.ancho*b.board.largo;
   });
-  result.unplaced.forEach(p=>{ const o = get(p.material, p.espesor); o.sinColocar++; o.cortes[p.name] = (o.cortes[p.name]||0)+1; });
+  result.unplaced.forEach(p=>{ const o = get(p.material, p.espesor, p.tabLargo, p.tabAncho); o.sinColocar++; o.cortes[p.name] = (o.cortes[p.name]||0)+1; });
   return Object.values(g).map(o=>({
-    ...o, medidas: o.medidas.size ? [...o.medidas].join(' · ') : '—',
+    ...o, medidas: o.ancho ? `${fmt(o.ancho)}×${fmt(o.largo)}` : '—',
     nombres: Object.entries(o.cortes).sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0])).map(e=>e[0]).join(', ') || '—',
     requeridas: o.colocadas + o.sinColocar,
     aprov: o.areaTableros ? o.areaPiezas/o.areaTableros*100 : 0,
     desperdicioMm2: o.areaTableros - o.areaPiezas,
     desperdicioPct: o.areaTableros ? (o.areaTableros-o.areaPiezas)/o.areaTableros*100 : 0
-  })).sort((a,b)=> a.material.localeCompare(b.material) || a.espesor-b.espesor);
+  })).sort((a,b)=> a.material.localeCompare(b.material) || a.espesor-b.espesor || b.largo-a.largo || b.ancho-a.ancho);
+}
+
+/** Tableros consumidos por material, por material+espesor y por medida de tablero (para el resumen en pantalla y PDF). */
+function totalesTableros(rows){
+  const acc = keyFn => { const m = new Map(); rows.forEach(r=>{ const k = keyFn(r); m.set(k, (m.get(k)||0)+r.tableros); }); return [...m].map(([k,n])=>({k,n})); };
+  return {
+    porMaterial: acc(r=>r.material),
+    porEspesor: acc(r=>r.material+' '+nf(r.espesor)+' mm'),
+    porDimension: acc(r=>r.largo ? etiquetaDim(r.largo, r.ancho) : '—'),
+    piezas: rows.reduce((n,r)=>n+r.colocadas,0)
+  };
+}
+
+/** Texto de la modalidad usada (para encabezados de planos y PDF). */
+function modalidadTexto(){
+  const e = STATE.ultimasEstrategias;
+  if(e && e.length>1) return 'Óptimo' + (STATE.bestName ? ` (método elegido: ${STATE.bestName})` : '');
+  if(e && e.length===1) return e[0].name;
+  return STATE.bestName || '—';
 }
 
 function drawPlano(idx){
@@ -2038,7 +2205,7 @@ function renderResumen(result){
   const kerf = STATE.params.kerf;
   const th = $('resumenMateriales').querySelector('thead');
   const tb = $('resumenMateriales').querySelector('tbody');
-  th.innerHTML = '<tr><th>Material</th><th>Tablero (nombre)</th><th>Espesor (mm)</th><th>Tablero (ancho×largo mm)</th><th>Piezas requeridas</th><th>Colocadas</th><th>Tableros usados</th><th>Kerf (mm)</th><th>Aprovechamiento</th><th>Desperdicio estimado</th></tr>';
+  th.innerHTML = '<tr><th>Material</th><th>Tablero (nombre)</th><th>Espesor (mm)</th><th>Medida de tablero (ancho×largo mm)</th><th>Piezas requeridas</th><th>Colocadas</th><th>Tableros usados</th><th>Kerf (mm)</th><th>Aprovechamiento</th><th>Desperdicio estimado</th></tr>';
   tb.innerHTML = '';
   let t = {req:0,col:0,tab:0,ap:0,at:0};
   rows.forEach(r=>{
@@ -2054,6 +2221,9 @@ function renderResumen(result){
   tr.innerHTML = `<td colspan="4">TOTAL</td><td>${t.req}</td><td>${t.col}</td><td>${t.tab}</td><td>${kerf}</td>`+
     `<td>${t.at?(t.ap/t.at*100).toFixed(1):'0.0'}%</td><td>${fmt((t.at-t.ap)/1e6,2)} m² (${t.at?((t.at-t.ap)/t.at*100).toFixed(1):'0.0'}%)</td>`;
   tb.appendChild(tr);
+  const tt = totalesTableros(rows), lst = a => a.map(x=>`${escapeHtml(x.k)}: <b>${x.n}</b>`).join(' · ') || '—';
+  const boxT = $('resumenTotales');
+  if(boxT) boxT.innerHTML = `<b>Tableros por material:</b> ${lst(tt.porMaterial)}<br><b>Tableros por espesor:</b> ${lst(tt.porEspesor)}<br><b>Tableros por medida:</b> ${lst(tt.porDimension)}<br><b>Piezas optimizadas:</b> ${tt.piezas}`;
   $('resumenCard').style.display = rows.length ? 'block' : 'none';
 }
 
@@ -2107,9 +2277,16 @@ const nf2 = n => { const v = +n; return Number.isInteger(v) ? String(v) : String
 
 /** Resumen por material con el desglose por habilitado (piezas por mueble, muebles y piezas a cortar). */
 function resumenDetallado(result){
-  return resumenPorMaterial(result).map(r=>{
+  const filas = resumenPorMaterial(result), legadoUsado = new Set();
+  return filas.map(r=>{
     const porHab = {};
-    STATE.piezas.filter(p=>p.material===r.material && +p.espesor===r.espesor).forEach(p=>{
+    const kMat = r.material+'|'+r.espesor;
+    const primeraDelMaterial = !legadoUsado.has(kMat); legadoUsado.add(kMat);
+    STATE.piezas.filter(p=>{
+      if(p.material!==r.material || +p.espesor!==r.espesor) return false;
+      const d = dimTablero(p);
+      return d ? (d.largo===r.largo && d.ancho===r.ancho) : primeraDelMaterial;   // sin asignar: se cuenta en la primera fila del material/espesor
+    }).forEach(p=>{
       const h = habilitadoDe(p);
       if(p.habId && !(h && h.incluir)) return;
       const tot = cantidadTotal(p); if(tot<=0) return;
@@ -2260,7 +2437,11 @@ function construirPdfOptimizacion(doc, result, ctx){
   });
   let yy = doc.lastAutoTable.finalY + 7;
   doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(30,64,175);
-  const lineaTab = doc.splitTextToSize(`Tableros necesarios: ${totTab} en total — ` + det.map(r=>`${r.material}: ${r.tableros}`).join(' · '), pw1-24);
+  const ttPdf = totalesTableros(det);
+  const lineaTab = [
+    ...doc.splitTextToSize(`Tableros necesarios: ${totTab} en total — ` + det.map(r=>`${r.material} ${nf(r.espesor)} mm ${r.largo ? etiquetaDim(r.largo, r.ancho, ' x ') : ''}: ${r.tableros}`).join(' · '), pw1-24),
+    ...doc.splitTextToSize('Por material: ' + ttPdf.porMaterial.map(x=>`${x.k}: ${x.n}`).join(' · '), pw1-24)
+  ];
   doc.text(lineaTab, 12, yy);
   yy += lineaTab.length*4.2 + 3;
   doc.setTextColor(15,23,42);
@@ -2299,7 +2480,7 @@ function construirPdfOptimizacion(doc, result, ctx){
   agruparPatronesTablero(boards).forEach(g=>{
     const idx = g.idxs[0], b = boards[idx], N = g.idxs.length;
     const board = b.board, info = infoTablero(boards, idx, result.unplaced);
-    const mismosMat = boards.filter(x=>x.board.material===board.material && +x.board.espesor===+board.espesor);
+    const mismosMat = boards.filter(x=>mismoGrupoTab(x.board, board));
     const numsTxt = compactarNumeros(g.idxs.map(i=>i+1));
     const secTxt  = compactarNumeros(g.idxs.map(i=>mismosMat.indexOf(boards[i])+1));
     const lblNum = N>1 ? 'Tableros ' + (numsTxt.length<=34 ? numsTxt : `${idx+1}… (${N} iguales)`) : `Tablero ${info.numero}`;
@@ -2315,7 +2496,8 @@ function construirPdfOptimizacion(doc, result, ctx){
     // Encabezado (el texto se ajusta al ancho de la hoja, horizontal o vertical)
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
     const hl = [
-      ...doc.splitTextToSize(`${lblSec} de ${info.totMat} de este material | Medidas: ${nf(W)} x ${nf(H)} mm (ancho x largo) | Kerf: ${kerf} mm | Margen: ${nf(m)} mm | Veta: ${textoVeta(board.veta)} | Orientación: ${pw<ph?'vertical':'horizontal'}${R?' | Dibujo girado 90 grados':''}`, pw-20),
+      ...doc.splitTextToSize(`${lblSec} de ${info.totMat} de este grupo | Medidas: largo ${nf(H)} x ancho ${nf(W)} mm (${etiquetaDim(H, W, ' x ')}) | Kerf: ${kerf} mm | Margen: ${nf(m)} mm | Veta: ${textoVeta(board.veta)} | Orientación: ${pw<ph?'vertical':'horizontal'}${R?' | Dibujo girado 90 grados':''}`, pw-20),
+      ...doc.splitTextToSize(`Modalidad: ${modalidadTexto()} | Grupo de optimizacion: ${board.material} + espesor ${nf(board.espesor)} mm + tablero ${etiquetaDim(H, W, ' x ')}`, pw-20),
       ...doc.splitTextToSize(`${piezas.length} piezas | Aprovechamiento ${aprov.toFixed(1)}% | Sobrante ${(100-aprov).toFixed(1)}% (${((W*H-area)/1e6).toFixed(2)} m2)`, pw-20)
     ];
     let muebL = [];
@@ -2475,7 +2657,7 @@ $('btnPdfOptim').onclick = ()=>{
     construirPdfOptimizacion(doc, r, {
       fecha: ahora.toLocaleString('es-MX'),
       proyecto: STATE.projectName || 'Sin guardar',
-      modo: (r.mode || 'mixto')
+      modo: modalidadTexto()
     });
     const pad = n=>String(n).padStart(2,'0');
     const nombrePdf = pedirNombrePdf(`cutfix-pro_optimizacion_${ahora.getFullYear()}${pad(ahora.getMonth()+1)}${pad(ahora.getDate())}`);
@@ -3071,6 +3253,7 @@ $('btnConfirmImport').onclick = ()=>{
   const ok = res.items.filter(x=>x.estado==='ok' && !_excelDesmarcadas.has(x.fila));   // solo las piezas marcadas como "Cortar"
   const errores = res.items.filter(x=>x.estado==='error').length;
   if(!ok.length){ toast('No hay piezas marcadas para cortar','error'); return; }
+  const dimImp = dimParaImportar(); if(!dimImp) return;
 
   // Las piezas DESMARCADAS mandan: si ese mismo archivo ya se había importado antes, se quitan del proyecto
   // las piezas de esas filas (si no, seguirían apareciendo en la optimización y en los planos).
@@ -3101,25 +3284,26 @@ $('btnConfirmImport').onclick = ()=>{
       veta: x.veta, rot: x.veta==='ninguna', obs: '',
       habId: hab.id,
       unidad: x.unidad, tolAncho: x.tolAncho, tolLargo: x.tolLargo,
-      tolAnchoTxt: x.tolAnchoTxt, tolLargoTxt: x.tolLargoTxt, srcKey: x.srcKey
+      tolAnchoTxt: x.tolAnchoTxt, tolLargoTxt: x.tolLargoTxt, srcKey: x.srcKey,
+      tabLargo: dimImp.largo, tabAncho: dimImp.ancho
     });
     ensureOption('pMaterial', x.material); ensureOption('tMaterial', x.material);
     combos.add(x.material+'|'+x.espesor);
     count++;
   });
-  // Tablero estándar 2440×1220 para cada material/espesor sin tablero registrado
+  // Tablero de la medida elegida para cada material/espesor sin tablero registrado de esa medida
   let nuevos = 0;
   combos.forEach(k=>{
     const [mat, esp] = k.split('|'); const e = +esp;
-    if(!sinStock() && !STATE.tableros.some(t=>t.material===mat && +t.espesor===e)){
-      STATE.tableros.push({id:uid(), nombre:`${mat} (auto)`, material:mat, largo:2440, ancho:1220,
+    if(!sinStock() && !STATE.tableros.some(t=>t.material===mat && +t.espesor===e && +t.largo===dimImp.largo && +t.ancho===dimImp.ancho)){
+      STATE.tableros.push({id:uid(), nombre:`${mat} (auto)`, material:mat, largo:dimImp.largo, ancho:dimImp.ancho,
         espesor:e, precio:0, color:'#c8a878', veta:'largo', cantidad:TABLEROS_AUTO_CANT, margen:0});
       nuevos++;
     }
   });
   if(count>0) STATE.habilitados.push(hab);
   renderPiezas(); renderTableros(); renderHabilitados();
-  const msg = `Importadas ${count} piezas` + (dup?` · ${dup} ya existían`:'') + (errores?` · ${errores} con error`:'') + (nuevos?` · ${nuevos} tableros 2440×1220 creados`:'') + (quitadas?` · ${quitadas} desmarcadas quitadas`:'');
+  const msg = `Importadas ${count} piezas` + (dup?` · ${dup} ya existían`:'') + (errores?` · ${errores} con error`:'') + (nuevos?` · ${nuevos} tableros ${etiquetaDim(dimImp.largo,dimImp.ancho)} creados`:'') + (quitadas?` · ${quitadas} desmarcadas quitadas`:'');
   if(count===0 && quitadas>0) toast(`Se quitaron ${quitadas} renglones desmarcados que ya estaban importados · se conservan ${dup} marcados`, 'success');
   else if(count===0 && dup>0) toast('Ese archivo ya estaba importado: cambia su cantidad de muebles en Habilitados (no se duplicó nada).','error');
   else toast(msg + (count>0 ? ` · habilitado "${hab.nombre}" × ${hab.muebles} mueble(s)` : ''), errores?'error':'success');
@@ -3245,6 +3429,7 @@ $('btnLoteConfirmar').onclick = ()=>{
     const first = $('tablaLote').querySelector(`[data-lmue="${faltan[0].id}"]`); if(first) first.focus();
     toast(`Falta la cantidad de muebles en ${faltan.length} habilitado(s)`,'error'); return;
   }
+  const dimImp = dimParaImportar(); if(!dimImp) return;
   const existentes = new Set(STATE.piezas.map(p=>p.srcKey).filter(Boolean));
   const combos = new Set();
   let nHab = 0, nPiezas = 0, dup = 0, errores = 0;
@@ -3261,7 +3446,8 @@ $('btnLoteConfirmar').onclick = ()=>{
         veta: x.veta, rot: x.veta==='ninguna', obs: '',
         habId: hab.id,
         unidad: x.unidad, tolAncho: x.tolAncho, tolLargo: x.tolLargo,
-        tolAnchoTxt: x.tolAnchoTxt, tolLargoTxt: x.tolLargoTxt, srcKey: x.srcKey
+        tolAnchoTxt: x.tolAnchoTxt, tolLargoTxt: x.tolLargoTxt, srcKey: x.srcKey,
+        tabLargo: dimImp.largo, tabAncho: dimImp.ancho
       });
       ensureOption('pMaterial', x.material); ensureOption('tMaterial', x.material);
       combos.add(x.material+'|'+x.espesor);
@@ -3273,8 +3459,8 @@ $('btnLoteConfirmar').onclick = ()=>{
   let nuevosTab = 0;
   combos.forEach(k=>{
     const [mat, esp] = k.split('|'); const e = +esp;
-    if(!sinStock() && !STATE.tableros.some(t=>t.material===mat && +t.espesor===e)){
-      STATE.tableros.push({id:uid(), nombre:`${mat} (auto)`, material:mat, largo:2440, ancho:1220,
+    if(!sinStock() && !STATE.tableros.some(t=>t.material===mat && +t.espesor===e && +t.largo===dimImp.largo && +t.ancho===dimImp.ancho)){
+      STATE.tableros.push({id:uid(), nombre:`${mat} (auto)`, material:mat, largo:dimImp.largo, ancho:dimImp.ancho,
         espesor:e, precio:0, color:'#c8a878', veta:'largo', cantidad:TABLEROS_AUTO_CANT, margen:0});
       nuevosTab++;
     }
@@ -3283,7 +3469,7 @@ $('btnLoteConfirmar').onclick = ()=>{
   LOTE.length = 0; loteRender();
   renderPiezas(); renderTableros(); renderHabilitados();
   if(typeof saveAuto === 'function') saveAuto();
-  toast(`${nHab} habilitado(s) importado(s) · ${nPiezas} renglones` + (dup?` · ${dup} ya existían`:'') + (errores?` · ${errores} con error`:'') + (omitidos?` · ${omitidos} archivo(s) omitido(s) sin renglones válidos`:'') + (nuevosTab?` · ${nuevosTab} tableros 2440×1220 creados`:''), errores?'error':'success');
+  toast(`${nHab} habilitado(s) importado(s) · ${nPiezas} renglones` + (dup?` · ${dup} ya existían`:'') + (errores?` · ${errores} con error`:'') + (omitidos?` · ${omitidos} archivo(s) omitido(s) sin renglones válidos`:'') + (nuevosTab?` · ${nuevosTab} tableros ${etiquetaDim(dimImp.largo,dimImp.ancho)} creados`:''), errores?'error':'success');
   if(nHab>0 || dup>0) document.querySelector('.nav-btn[data-section="habilitados"]').click();
 };
 
@@ -3307,8 +3493,8 @@ $('btnExportTableros').onclick = $('btnExpTabXls').onclick = ()=>{
 };
 $('btnExportPiezas').onclick = $('btnExpPiezasXls').onclick = ()=>{
   if(!STATE.piezas.length){ toast('Sin piezas','error'); return; }
-  const rows = [['Nombre','Largo','Ancho','Cantidad','Espesor','Material','Veta','Rotacion','Obs']];
-  STATE.piezas.forEach(p=>rows.push([p.nombre,p.largo,p.ancho,p.cantidad,p.espesor,p.material,p.veta,p.rot?'Sí':'No',p.obs]));
+  const rows = [['Nombre','Largo','Ancho','Cantidad','Espesor','Material','Veta','Rotacion','Obs','Tablero asignado (cm)']];
+  STATE.piezas.forEach(p=>{ const d = dimTablero(p); rows.push([p.nombre,p.largo,p.ancho,p.cantidad,p.espesor,p.material,p.veta,p.rot?'Sí':'No',p.obs, d ? etiquetaDim(d.largo,d.ancho) : 'Predeterminado']); });
   exportXLS('piezas.xlsx', {Piezas:rows});
   toast('Excel exportado','success');
 };
@@ -3344,7 +3530,7 @@ $('btnPdfPlano').onclick = ()=>{
       doc.setFontSize(14); doc.setTextColor(15,23,42);
       doc.text(`Tablero ${i+1} — ${b.board.nombre}`, 10, 12);
       doc.setFontSize(10);
-      doc.text(doc.splitTextToSize(`Material: ${b.board.material} · ${b.board.ancho}×${b.board.largo} mm · Kerf: ${STATE.params.kerf} mm`, pageW-20), 10, 18);
+      doc.text(doc.splitTextToSize(`Material: ${b.board.material} · espesor ${nf(b.board.espesor)} mm · Tablero: largo ${b.board.largo} × ancho ${b.board.ancho} mm (${etiquetaDim(b.board.largo, b.board.ancho)}) · Modalidad: ${modalidadTexto()} · Kerf: ${STATE.params.kerf} mm`, pageW-20), 10, 18);
       doc.setFont('helvetica','bold'); doc.setTextColor(35,88,230); doc.text('CUTFIX PRO', pageW-10, 12, {align:'right'});
       doc.setFont('helvetica','normal'); doc.setTextColor(15,23,42);
       // Dibujo con el giro elegido (visual): ancho<->largo y eje invertido, igual que la vista previa
@@ -3594,6 +3780,7 @@ function escapeHtml(s){
    ========================================================= */
 function init(){
   const hadData = loadAuto();
+  refrescarSelectorExcel();
   bindParams();
   loadParamsUI();
   renderTableros();
