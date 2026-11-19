@@ -440,3 +440,8 @@ body.voz-abierto{overflow:hidden}
 .stock-note { margin:.6rem 0 0; font-size:.82rem; color:#4a5972; line-height:1.45; }
 #sec-tableros.sin-stock label:has(#tCantidad) { opacity:.45; }
 .muted { color:#94a3b8; font-weight:700; }
+
+/* Selector de medida de tablero por pieza */
+.col-tab select{min-width:118px;font-size:12.5px;padding:4px 6px}
+.tab-cust{display:flex;align-items:center;gap:4px;margin-top:4px;white-space:nowrap}
+.tab-cust input{width:62px;font-size:12.5px;padding:4px 6px}
