@@ -203,6 +203,18 @@
     </div>
   </div>
 
+  <div class="card" id="bulkCard">
+    <h3>Asignar medida de tablero por material</h3>
+    <div class="form-grid">
+      <label>Aplicar a las piezas de <select id="bkMat"></select></label>
+      <label>Medida del tablero
+        <select id="bkOpc"><option value="sq">122 × 122 cm</option><option value="std" selected>244 × 122 cm</option><option value="custom">Personalizado</option></select></label>
+      <label class="bk-cust" style="display:none">Largo (cm) <input type="number" id="bkLargo" min="0" step="any" inputmode="decimal"></label>
+      <label class="bk-cust" style="display:none">Ancho (cm) <input type="number" id="bkAncho" min="0" step="any" inputmode="decimal"></label>
+    </div>
+    <div class="form-actions"><button class="btn btn-outline" id="btnBkAplicar" type="button"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span>Asignar</span></button></div>
+  </div>
+
   <div class="card">
     <div class="table-toolbar">
       <h3>Piezas registradas (<span id="countPiezas">0</span>)</h3>
@@ -215,7 +227,7 @@
       <table class="data-table" id="tablaPiezas">
         <thead>
           <tr><th>#</th><th>Nombre</th><th>Largo</th><th>Ancho</th><th>Cant. (por mueble)</th><th>Total a cortar</th>
-          <th>Esp.</th><th>Material</th><th>Veta</th><th>Rot.</th><th>Habilitado</th><th>Obs.</th><th>Acciones</th></tr>
+          <th>Esp.</th><th>Material</th><th>Tablero (cm)</th><th>Veta</th><th>Rot.</th><th>Habilitado</th><th>Obs.</th><th>Acciones</th></tr>
         </thead>
         <tbody></tbody>
       </table>
@@ -229,6 +241,25 @@
     <h2>Importar desde Excel</h2>
     <p>Sube uno o varios archivos .xlsx o .xls; las columnas se mapean automáticamente.</p>
   </header>
+
+  <div class="card" id="dimCard">
+    <h3>Dimensiones del tablero</h3>
+    <div class="form-grid">
+      <label>Medida del tablero para las piezas que importes
+        <select id="exdOpc">
+          <option value="sq">A. Tablero de 122 × 122 cm</option>
+          <option value="std" selected>B. Tablero de 244 × 122 cm (predeterminado)</option>
+          <option value="custom">C. Personalizado</option>
+        </select></label>
+      <label class="exd-cust" style="display:none">Largo (cm) <input type="number" id="exdLargo" min="0" step="any" inputmode="decimal" placeholder="Ej. 150"></label>
+      <label class="exd-cust" style="display:none">Ancho (cm) <input type="number" id="exdAncho" min="0" step="any" inputmode="decimal" placeholder="Ej. 100"></label>
+    </div>
+    <div class="hint" id="exdSel"></div>
+    <div class="form-actions">
+      <button class="btn btn-outline" id="btnExdAplicar" type="button"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span>Aplicar a TODAS las piezas ya importadas</span></button>
+    </div>
+    <div class="hint">La medida elegida se asigna a las piezas que importes a partir de ahora y puedes cambiarla antes de optimizar. También puedes asignar una medida distinta a cada pieza o a cada material en <b>Piezas</b>. Piezas con medida, material o espesor distintos nunca comparten tablero: cada combinación se optimiza por separado. Las medidas personalizadas se usan exactamente como las captures.</div>
+  </div>
 
   <div class="card">
     <h3>1. Selecciona el archivo o los archivos</h3>
@@ -470,6 +501,7 @@
     <div class="table-wrap">
       <table class="data-table" id="resumenMateriales"><thead></thead><tbody></tbody></table>
     </div>
+    <div class="hint" id="resumenTotales"></div>
   </div>
 </section>
 
