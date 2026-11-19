@@ -2724,8 +2724,30 @@ let _filtPrev = {};      // filtros tipo Excel de la Vista previa: {columna: Set
 let _filtRev  = {};      // filtros tipo Excel de la Revisión antes de importar
 const _normTxt = t => String(t==null?'':t).toLowerCase();
 
-$('excelFile').onchange = (e)=>{
-  const file = e.target.files[0]; if(!file) return;
+/** Reinicia la importación de UN archivo (mapeo, vista previa y revisión). */
+function importReiniciarIndividual(){
+  STATE.excelRows = null; STATE.excelCols = null;
+  _excelFileName = 'excel'; _excelDesmarcadas = new Set(); _filtPrev = {}; _filtRev = {};
+  cerrarFiltroExcel();
+  ['excelMapCard','excelReviewCard','excelPreviewCard'].forEach(id=>{ $(id).style.display = 'none'; });
+  $('excelMapFields').innerHTML = '';
+  ['excelReviewTable','excelPreviewTable'].forEach(id=>{
+    const t = $(id); t.querySelector('thead').innerHTML = ''; t.querySelector('tbody').innerHTML = '';
+  });
+  $('excelWarnings').innerHTML = ''; $('excelRowCount').textContent = ''; delete $('excelRowCount').dataset.base;
+  $('impHabNombre').value = ''; $('impMuebles').value = 1;
+}
+
+// Un solo selector: 1 archivo -> flujo individual (mapeo + revisión); 2 o más -> lista de habilitados
+$('excelFile').onchange = async (e)=>{
+  const files = [...e.target.files]; if(!files.length) return;
+  if(files.length > 1 || LOTE.length){
+    e.target.value = '';
+    importReiniciarIndividual();
+    await loteAgregar(files);
+    return;
+  }
+  const file = files[0];
   _excelFileName = file.name;
   _excelDesmarcadas = new Set();
   _filtPrev = {}; _filtRev = {};
@@ -3136,6 +3158,7 @@ function loteResumen(){
 }
 function loteRender(){
   $('loteBody').style.display = LOTE.length ? 'block' : 'none';
+  $('loteCard').style.display = LOTE.length ? 'block' : 'none';
   const tb = $('tablaLote').querySelector('tbody'); tb.innerHTML = '';
   LOTE.forEach((it,i)=>{
     const estado = it.error ? `❌ ${escapeHtml(it.error)}`
@@ -3176,7 +3199,7 @@ async function loteAgregar(files){
   toast(`${nuevos} archivo(s) agregado(s) a la lista` + (av.length ? ' · omitidos: ' + av.join(', ') : '') + (nuevos ? ' · captura la cantidad de muebles de cada uno' : ''), av.length&&!nuevos ? 'error' : 'success');
 }
 
-$('btnLoteElegir').onclick = $('btnLoteMas').onclick = ()=> $('loteFiles').click();
+$('btnLoteMas').onclick = ()=> $('loteFiles').click();
 $('btnHabAgregarVarios').onclick = ()=> $('loteFiles').click();
 $('loteFiles').onchange = async (e)=>{
   const files = [...e.target.files]; e.target.value = '';
@@ -3201,6 +3224,18 @@ $('tablaLote').addEventListener('click', ev=>{
   loteRender();
 });
 $('btnLoteLimpiar').onclick = ()=>{ LOTE.length = 0; loteRender(); };
+
+/** BORRAR CONTENIDO: vacía todo lo cargado en Importar Excel (archivos, lista, mapeo, vista previa y revisión)
+ *  para empezar de nuevo. No toca los habilitados ya importados (esos se quitan en la sección Habilitados). */
+$('btnBorrarContenido').onclick = ()=>{
+  const hayContenido = LOTE.length > 0 || !!STATE.excelRows || !!$('excelFile').value;
+  if(!hayContenido){ toast('No hay contenido cargado para borrar'); return; }
+  if(!confirm('¿Borrar todo el contenido cargado en Importar Excel y empezar de nuevo?\n\nLos habilitados que ya importaste no se eliminan.')) return;
+  LOTE.length = 0; loteRender();
+  importReiniciarIndividual();
+  $('excelFile').value = ''; $('loteFiles').value = '';
+  toast('Contenido borrado · puedes subir archivos nuevos', 'success');
+};
 $('btnLoteConfirmar').onclick = ()=>{
   const validos = LOTE.filter(it=>it.ok>0);
   if(!validos.length){ toast('No hay archivos con renglones válidos para importar','error'); return; }
@@ -3590,6 +3625,8 @@ function irSeccion(k){ const b = document.querySelector(`.nav-btn[data-section="
 document.querySelectorAll('.nav-btn').forEach(btn=>btn.addEventListener('click', ()=>{
   const k = btn.dataset.section;
   $('appbarTitle').textContent = TITULOS[k] || k;
+  $('btnBorrarContenido').hidden = (k !== 'importar');   // en Importar Excel el botón superior es BORRAR CONTENIDO
+  $('btnAppCalcular').hidden = (k === 'importar');
   document.querySelectorAll('.bn-btn[data-go]').forEach(b=>b.classList.toggle('active', b.dataset.go===k));
   $('bnMore').classList.toggle('active', !document.querySelector(`.bn-btn[data-go="${k}"]`));
   window.scrollTo({top:0, behavior:'smooth'});
