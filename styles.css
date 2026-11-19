@@ -129,6 +129,10 @@ svg.ico-sprite{position:absolute;width:0;height:0;overflow:hidden}
 .btn-primary:hover{background:var(--primary-d);box-shadow:0 4px 14px rgba(35,88,230,.4)}
 .btn-outline{background:#fff;border:1.5px solid var(--line-2);color:#2b3850}
 .btn-outline:hover{background:#f6f8fd;border-color:#9db0d6}
+.btn-danger-outline{background:#fff;border:1.5px solid #fca5a5;color:var(--danger);letter-spacing:.3px}
+.btn-danger-outline .ico{color:var(--danger)}
+.btn-danger-outline:hover{background:#fef2f2;border-color:var(--danger)}
+.btn[hidden]{display:none}
 .btn-ghost{background:transparent;color:var(--muted)}
 .btn-ghost:hover{color:var(--ink);background:#eceff6}
 .btn-sm{height:36px;padding:0 13px;font-size:12.5px;border-radius:10px}
