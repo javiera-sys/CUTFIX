@@ -55,7 +55,8 @@
     <button class="menu-toggle" id="menuToggle" aria-label="Abrir menú"><svg class="ico" aria-hidden="true"><use href="#i-menu"/></svg></button>
     <div class="appbar-brand">CUTFIX<span>PRO</span></div>
     <div class="crumbs"><small>CUTFIX PRO</small><b id="appbarTitle">Inicio</b></div>
-    <button class="btn btn-primary btn-sm" data-go="optimizacion"><svg class="ico" aria-hidden="true"><use href="#i-bolt"/></svg><span>Calcular corte</span></button>
+    <button class="btn btn-primary btn-sm" id="btnAppCalcular" data-go="optimizacion"><svg class="ico" aria-hidden="true"><use href="#i-bolt"/></svg><span>Calcular corte</span></button>
+    <button class="btn btn-danger-outline btn-sm" id="btnBorrarContenido" type="button" hidden><svg class="ico" aria-hidden="true"><use href="#i-delete"/></svg><span>BORRAR CONTENIDO</span></button>
   </header>
   <main class="content">
 
@@ -226,14 +227,19 @@
 <section id="sec-importar" class="section">
   <header class="sec-header">
     <h2>Importar desde Excel</h2>
-    <p>Sube un archivo .xlsx o .xls y mapea las columnas automáticamente.</p>
+    <p>Sube uno o varios archivos .xlsx o .xls; las columnas se mapean automáticamente.</p>
   </header>
 
-  <div class="card" id="loteCard">
-    <h3>Importación múltiple de habilitados</h3>
-    <div class="hint">Selecciona varios archivos Excel de una sola vez (Ctrl o Shift en el explorador de Windows). Después captura la cantidad de muebles de cada habilitado en la lista y confirma todo junto.</div>
-    <div class="form-actions"><button class="btn btn-primary" id="btnLoteElegir"><svg class="ico" aria-hidden="true"><use href="#i-upload"/></svg><span>Seleccionar varios archivos…</span></button></div>
+  <div class="card">
+    <h3>1. Selecciona el archivo o los archivos</h3>
+    <input type="file" id="excelFile" accept=".xlsx,.xls" multiple>
+    <div class="hint">Puedes elegir uno o varios archivos Excel a la vez (Ctrl o Shift en el explorador de Windows). Con un solo archivo podrás mapear columnas y revisar renglones; con varios, capturas la cantidad de muebles de cada habilitado en una lista y confirmas todo junto. Columnas reconocidas automáticamente: descripción, cantidad, ancho, ancho tolerancia, largo, largo tolerancia, grueso, material, unidad, veta. Solo los renglones con unidad válida (ej. HOJA) entran a la optimización; solo las tolerancias con formato +número se suman.</div>
     <input type="file" id="loteFiles" accept=".xlsx,.xls" multiple style="display:none">
+  </div>
+
+  <div class="card" id="loteCard" style="display:none">
+    <h3>Habilitados seleccionados</h3>
+    <div class="hint">Captura la cantidad de muebles de cada habilitado y confirma todo junto.</div>
     <div id="loteBody" style="display:none">
       <div class="form-grid">
         <label>Unidades que entran a optimización (separadas por coma)
@@ -256,12 +262,6 @@
         <button class="btn btn-outline" id="btnLoteLimpiar"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg><span>Vaciar lista</span></button>
       </div>
     </div>
-  </div>
-
-  <div class="card">
-    <h3>1. Selecciona el archivo</h3>
-    <input type="file" id="excelFile" accept=".xlsx,.xls">
-    <div class="hint">Columnas reconocidas automáticamente: descripción, cantidad, ancho, ancho tolerancia, largo, largo tolerancia, grueso, material, unidad, veta. Solo los renglones con unidad válida (ej. HOJA) entran a la optimización; solo las tolerancias con formato +número se suman.</div>
   </div>
 
   <div class="card" id="excelMapCard" style="display:none">
