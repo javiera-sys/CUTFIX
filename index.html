@@ -354,7 +354,7 @@
       </table>
     </div>
     <div class="hint" id="habResumen"></div>
-    <div class="form-actions"><button class="btn btn-primary" id="btnHabCalcular"><svg class="ico" aria-hidden="true"><use href="#i-bolt"/></svg><span>Ir a calcular el corte</span></button></div>
+    <div class="form-actions"><button class="btn btn-primary" id="btnHabCalcular"><svg class="ico" aria-hidden="true"><use href="#i-tune"/></svg><span>Ir a Parámetros</span></button></div>
   </div>
 </section>
 
@@ -536,8 +536,8 @@
 
   <div class="card">
     <div class="form-grid">
-      <label>Largo (mm) <input type="number" id="sLargo" min="1"></label>
-      <label>Ancho (mm) <input type="number" id="sAncho" min="1"></label>
+      <label>Largo (mm) <input type="number" id="sLargo" min="1" placeholder="Ej: 1200"></label>
+      <label>Ancho (mm) <input type="number" id="sAncho" min="1" placeholder="Ej: 600"></label>
       <label>Espesor (mm) <input type="number" id="sEspesor" min="1" step="0.1" value="18"></label>
       <label>Material
         <select id="sMaterial">
@@ -575,10 +575,10 @@
   </header>
   <div class="card">
     <div class="form-grid">
-      <button class="btn btn-outline" id="btnExpPiezasXls"><svg class="ico" aria-hidden="true"><use href="#i-pdf"/></svg><span>Piezas a Excel</span></button>
-      <button class="btn btn-outline" id="btnExpTabXls"><svg class="ico" aria-hidden="true"><use href="#i-pdf"/></svg><span>Tableros a Excel</span></button>
-      <button class="btn btn-outline" id="btnExpResXls"><svg class="ico" aria-hidden="true"><use href="#i-pdf"/></svg><span>Resultados a Excel</span></button>
-      <button class="btn btn-outline" id="btnExpSobXls"><svg class="ico" aria-hidden="true"><use href="#i-pdf"/></svg><span>Sobrantes a Excel</span></button>
+      <button class="btn btn-outline" id="btnExpPiezasXls"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span>Piezas a Excel</span></button>
+      <button class="btn btn-outline" id="btnExpTabXls"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span>Tableros a Excel</span></button>
+      <button class="btn btn-outline" id="btnExpResXls"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span>Resultados a Excel</span></button>
+      <button class="btn btn-outline" id="btnExpSobXls"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span>Sobrantes a Excel</span></button>
       <button class="btn btn-outline" id="btnExpProj"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span>Exportar proyecto (.json)</span></button>
       <button class="btn btn-outline" id="btnImpProj"><svg class="ico" aria-hidden="true"><use href="#i-folder"/></svg><span>Importar proyecto (.json)</span></button>
       <input type="file" id="projFile" accept=".json" style="display:none">
