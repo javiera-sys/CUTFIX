@@ -78,18 +78,18 @@ function renderTableros(){
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtml(t.nombre)}</td>
-      <td>${t.material}</td>
+      <td>${escapeHtml(t.material)}</td>
       <td>${t.largo}</td>
       <td>${t.ancho}</td>
       <td>${t.espesor}</td>
       <td>$${fmt(t.precio,2)}</td>
-      <td><span style="display:inline-block;width:16px;height:16px;border-radius:4px;border:1px solid #ccc;background:${t.color}"></span></td>
-      <td>${t.veta}</td>
+      <td><span style="display:inline-block;width:16px;height:16px;border-radius:4px;border:1px solid #ccc;background:${colorSeguro(t.color)}"></span></td>
+      <td>${escapeHtml(t.veta)}</td>
       <td>${sinStock() ? '<span class="muted" title="Sin stock: cantidad ilimitada">∞</span>' : t.cantidad}</td>
       <td class="actions">
-        <button class="icon-btn" data-edit="${t.id}" title="Editar">${ico('edit')}</button>
-        <button class="icon-btn" data-dup="${t.id}" title="Duplicar">${ico('copy')}</button>
-        <button class="icon-btn del" data-del="${t.id}" title="Eliminar">${ico('delete')}</button>
+        <button class="icon-btn" data-edit="${escapeHtml(t.id)}" title="Editar">${ico('edit')}</button>
+        <button class="icon-btn" data-dup="${escapeHtml(t.id)}" title="Duplicar">${ico('copy')}</button>
+        <button class="icon-btn del" data-del="${escapeHtml(t.id)}" title="Eliminar">${ico('delete')}</button>
       </td>`;
     tbody.appendChild(tr);
   });
@@ -260,13 +260,13 @@ const _tabCustomAbierto = new Set();   // piezas cuya fila muestra los campos de
 function celdaTablero(p){
   const d = dimTablero(p), op = _tabCustomAbierto.has(p.id) ? 'custom' : opcDeDim(d);
   const cm = v => d ? +(v/10).toFixed(2) : '';
-  return `<select data-ptab="${p.id}" aria-label="Medida de tablero">`+
+  return `<select data-ptab="${escapeHtml(p.id)}" aria-label="Medida de tablero">`+
     `<option value="def"${op==='def'?' selected':''}>Predeterminado</option>`+
     `<option value="sq"${op==='sq'?' selected':''}>122 × 122</option>`+
     `<option value="std"${op==='std'?' selected':''}>244 × 122</option>`+
     `<option value="custom"${op==='custom'?' selected':''}>Personalizado</option></select>`+
-    (op==='custom' ? `<div class="tab-cust"><input type="number" min="0" step="any" data-ptl="${p.id}" value="${cm(d&&d.largo)}" placeholder="Largo" aria-label="Largo cm"> × `+
-      `<input type="number" min="0" step="any" data-pta="${p.id}" value="${cm(d&&d.ancho)}" placeholder="Ancho" aria-label="Ancho cm"></div>` : '');
+    (op==='custom' ? `<div class="tab-cust"><input type="number" min="0" step="any" data-ptl="${escapeHtml(p.id)}" value="${cm(d&&d.largo)}" placeholder="Largo" aria-label="Largo cm"> × `+
+      `<input type="number" min="0" step="any" data-pta="${escapeHtml(p.id)}" value="${cm(d&&d.ancho)}" placeholder="Ancho" aria-label="Ancho cm"></div>` : '');
 }
 
 function renderPiezas(){
@@ -283,16 +283,16 @@ function renderPiezas(){
       <td>${p.cantidad}</td>
       <td><b>${cantidadTotal(p)}</b></td>
       <td>${p.espesor}</td>
-      <td>${p.material}</td>
+      <td>${escapeHtml(p.material)}</td>
       <td class="col-tab">${celdaTablero(p)}</td>
-      <td>${p.veta}</td>
+      <td>${escapeHtml(p.veta)}</td>
       <td>${p.rot?'Sí':'No'}</td>
       <td>${habilitadoDe(p) ? escapeHtml(habilitadoDe(p).nombre) : '—'}</td>
       <td>${escapeHtml(p.obs||'')}</td>
       <td class="actions">
-        <button class="icon-btn" data-edit="${p.id}">${ico('edit')}</button>
-        <button class="icon-btn" data-dup="${p.id}">${ico('copy')}</button>
-        <button class="icon-btn del" data-del="${p.id}">${ico('delete')}</button>
+        <button class="icon-btn" data-edit="${escapeHtml(p.id)}">${ico('edit')}</button>
+        <button class="icon-btn" data-dup="${escapeHtml(p.id)}">${ico('copy')}</button>
+        <button class="icon-btn del" data-del="${escapeHtml(p.id)}">${ico('delete')}</button>
       </td>`;
     tbody.appendChild(tr);
   });
@@ -2661,8 +2661,8 @@ $('btnGenHoja').onclick = ()=>{
       <div class="hoja-meta">
         <div class="row"><span>Proyecto:</span><b>${escapeHtml(proyecto)}</b></div>
         <div class="row"><span>Operador:</span><b>${escapeHtml(operador)||'—'}</b></div>
-        <div class="row"><span>Fecha:</span><b>${fecha}</b></div>
-        <div class="row"><span>Material:</span><b>${b.board.material}</b></div>
+        <div class="row"><span>Fecha:</span><b>${escapeHtml(fecha)}</b></div>
+        <div class="row"><span>Material:</span><b>${escapeHtml(b.board.material)}</b></div>
         <div class="row"><span>Medidas tablero:</span><b>${b.board.ancho}×${b.board.largo} mm</b></div>
         <div class="row"><span>Espesor:</span><b>${b.board.espesor} mm</b></div>
         <div class="row"><span>Kerf:</span><b>${STATE.params.kerf} mm</b></div>
@@ -2677,7 +2677,7 @@ $('btnGenHoja').onclick = ()=>{
             <td>${i+1}</td><td>${escapeHtml(p.name)}</td>
             <td>${Math.round(p.h)}</td><td>${Math.round(p.w)}</td>
             <td>${p.rotated?'Sí':'No'}</td>
-            <td>${p.veta}</td></tr>`).join('')}
+            <td>${escapeHtml(p.veta)}</td></tr>`).join('')}
         </tbody>
       </table>
       <p style="margin-top:14px;font-size:12px;color:#64748b">
@@ -2720,7 +2720,7 @@ function renderSobrantes(){
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${s.largo}</td><td>${s.ancho}</td><td>${s.espesor}</td>
-      <td>${s.material}</td><td>${s.veta}</td><td>${escapeHtml(s.origen||'')}</td>
+      <td>${escapeHtml(s.material)}</td><td>${escapeHtml(s.veta)}</td><td>${escapeHtml(s.origen||'')}</td>
       <td><button class="icon-btn del" data-del="${i}">${ico('delete')}</button></td>`;
     tbody.appendChild(tr);
   });
@@ -2906,6 +2906,7 @@ $('excelFile').onchange = async (e)=>{
   const reader = new FileReader();
   reader.onload = evt=>{
     try{
+      if(libFalta('excel')) return;
       const data = new Uint8Array(evt.target.result);
       const wb = XLSX.read(data, {type:'array'});
       const ws = wb.Sheets[wb.SheetNames[0]];
@@ -3323,7 +3324,7 @@ function loteRender(){
       `<td><input type="text" data-lnom="${it.id}" value="${escapeHtml(it.nombre)}"></td>`+
       `<td>${escapeHtml(it.file.name)}</td><td>${estado}</td>`+
       `<td>${it.ok ? +it.porMueble.toFixed(2) : '-'}</td>`+
-      `<td><input type="number" min="1" step="1" style="width:90px" data-lmue="${it.id}" value="${it.muebles}" placeholder="Cantidad"${it.ok?'':' disabled'}></td>`+
+      `<td><input type="number" min="1" step="1" style="width:90px" data-lmue="${it.id}" value="${escapeHtml(it.muebles)}" placeholder="Cantidad"${it.ok?'':' disabled'}></td>`+
       `<td class="lote-total">${it.ok && Math.floor(+it.muebles)>=1 ? loteTotalPiezas(it) : '-'}</td>`+
       `<td><button class="btn btn-sm btn-outline" data-ldel="${it.id}" title="Quitar de la lista"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg></button></td>`;
     tb.appendChild(tr);
@@ -3331,6 +3332,7 @@ function loteRender(){
   loteResumen();
 }
 async function loteAgregar(files){
+  if(libFalta('excel')) return;
   let nuevos = 0, repetidos = 0, yaImportados = 0, noExcel = 0;
   for(const file of files){
     if(!/\.(xlsx|xls)$/i.test(file.name)){ noExcel++; continue; }
@@ -3447,33 +3449,32 @@ $('btnLoteConfirmar').onclick = ()=>{
    EXPORTAR
    ========================================================= */
 function exportXLS(filename, sheets){
+  if(libFalta('excel')) return false;
   const wb = XLSX.utils.book_new();
   Object.entries(sheets).forEach(([name, rows])=>{
     const ws = XLSX.utils.aoa_to_sheet(rows);
     XLSX.utils.book_append_sheet(wb, ws, name);
   });
   XLSX.writeFile(wb, filename);
+  return true;
 }
 $('btnExportTableros').onclick = $('btnExpTabXls').onclick = ()=>{
   if(!STATE.tableros.length){ toast('Sin tableros','error'); return; }
   const rows = [['Nombre','Material','Largo','Ancho','Espesor','Precio','Color','Veta','Cantidad']];
   STATE.tableros.forEach(t=>rows.push([t.nombre,t.material,t.largo,t.ancho,t.espesor,t.precio,t.color,t.veta,t.cantidad]));
-  exportXLS('tableros.xlsx', {Tableros:rows});
-  toast('Excel exportado','success');
+  if(exportXLS('tableros.xlsx', {Tableros:rows})) toast('Excel exportado','success');
 };
 $('btnExportPiezas').onclick = $('btnExpPiezasXls').onclick = ()=>{
   if(!STATE.piezas.length){ toast('Sin piezas','error'); return; }
   const rows = [['Nombre','Largo','Ancho','Cantidad','Espesor','Material','Veta','Rotacion','Obs','Tablero asignado (cm)']];
   STATE.piezas.forEach(p=>{ const d = dimTablero(p); rows.push([p.nombre,p.largo,p.ancho,p.cantidad,p.espesor,p.material,p.veta,p.rot?'Sí':'No',p.obs, d ? etiquetaDim(d.largo,d.ancho) : 'Predeterminado']); });
-  exportXLS('piezas.xlsx', {Piezas:rows});
-  toast('Excel exportado','success');
+  if(exportXLS('piezas.xlsx', {Piezas:rows})) toast('Excel exportado','success');
 };
 $('btnExpSobXls').onclick = $('btnExportSobrantes').onclick = ()=>{
   if(!STATE.sobrantes.length){ toast('Sin sobrantes','error'); return; }
   const rows = [['Largo','Ancho','Espesor','Material','Veta','Origen']];
   STATE.sobrantes.forEach(s=>rows.push([s.largo,s.ancho,s.espesor,s.material,s.veta,s.origen]));
-  exportXLS('sobrantes.xlsx', {Sobrantes:rows});
-  toast('Excel exportado','success');
+  if(exportXLS('sobrantes.xlsx', {Sobrantes:rows})) toast('Excel exportado','success');
 };
 $('btnExpResXls').onclick = ()=>{
   if(!STATE.lastResult){ toast('Ejecuta primero la optimización','error'); return; }
@@ -3482,14 +3483,14 @@ $('btnExpResXls').onclick = ()=>{
     const m = r.metrics;
     rows.push([r.name, m.tableros, m.piezasColocadas, m.areaPiezas, m.areaTableros, m.desperdicio, m.aprovechamiento.toFixed(2), m.cortes, m.costo, m.unplaced]);
   });
-  exportXLS('resultados.xlsx', {Resultados:rows});
-  toast('Excel exportado','success');
+  if(exportXLS('resultados.xlsx', {Resultados:rows})) toast('Excel exportado','success');
 };
 /* =========================================================
    PDF PLANO
    ========================================================= */
 $('btnPdfPlano').onclick = ()=>{
   if(!STATE.bestResult){ toast('Ejecuta primero la optimización','error'); return; }
+  if(libFalta('pdf')) return;
   try{
     const { jsPDF } = window.jspdf;
     const pagina = STATE.orientacion==='vertical' ? 'portrait' : 'landscape';
@@ -3650,19 +3651,22 @@ function saveAuto(){
   }catch(e){ console.warn('No se pudo guardar',e); }
 }
 
+let _autoDanado = false;
 function loadAuto(){
+  let raw = null;
+  try{ raw = localStorage.getItem('opticorte_autosave'); }catch(e){ return false; }
+  if(!raw) return false;
   try{
-    const raw = localStorage.getItem('opticorte_autosave');
-    if(!raw) return false;
-    const data = JSON.parse(raw);
-    if(data.tableros) STATE.tableros = data.tableros;
-    if(data.piezas) STATE.piezas = data.piezas;
-    STATE.habilitados = data.habilitados || [];
-    if(data.sobrantes) STATE.sobrantes = data.sobrantes;
-    if(data.params) STATE.params = {...STATE.params, ...data.params};
-    if(data.projectName) STATE.projectName = data.projectName;
+    const r = sanearProyecto(JSON.parse(raw));
+    if(!r.ok) throw new Error(r.error);
+    aplicarProyecto(r.data);
     return true;
-  }catch(e){ return false; }
+  }catch(e){
+    // Autoguardado dañado: se guarda una copia aparte y se arranca limpio, para que la app siempre abra.
+    _autoDanado = true;
+    try{ localStorage.setItem('opticorte_autosave_danado', raw); localStorage.removeItem('opticorte_autosave'); }catch(_){}
+    return false;
+  }
 }
 
 $('btnSaveProj').onclick = ()=>{
@@ -3680,15 +3684,15 @@ $('btnSaveProj').onclick = ()=>{
   toast('Proyecto guardado','success');
 };
 $('btnLoadProj').onclick = ()=>{
-  const list = JSON.parse(localStorage.getItem('opticorte_projects')||'{}');
+  let list = {};
+  try{ list = JSON.parse(localStorage.getItem('opticorte_projects')||'{}'); }catch(e){ toast('La lista de proyectos guardados está dañada','error'); return; }
   const names = Object.keys(list);
   if(!names.length){ toast('No hay proyectos guardados','error'); return; }
   const sel = prompt('Proyecto a cargar:\n' + names.join('\n'), names[0]);
   if(!sel || !list[sel]) return;
-  const data = list[sel];
-  STATE.tableros = data.tableros; STATE.piezas = data.piezas; STATE.habilitados = data.habilitados || [];
-  STATE.sobrantes = data.sobrantes; STATE.params = data.params;
-  STATE.projectName = data.projectName;
+  const r = sanearProyecto(list[sel]);
+  if(!r.ok){ toast('No se pudo cargar el proyecto: ' + r.error,'error'); return; }
+  aplicarProyecto(r.data);
   renderTableros(); renderPiezas(); renderHabilitados(); renderSobrantes(); loadParamsUI();
   $('projInfo').innerHTML = `Proyecto: <b>${escapeHtml(sel)}</b>`;
   toast('Proyecto cargado','success');
@@ -3712,16 +3716,13 @@ $('btnExpProj').onclick = ()=>{
 $('btnImpProj').onclick = ()=> $('projFile').click();
 $('projFile').onchange = (e)=>{
   const file = e.target.files[0]; if(!file) return;
+  if(file.size > 20*1024*1024){ toast('Archivo demasiado grande para ser un proyecto','error'); return; }
   const reader = new FileReader();
   reader.onload = evt=>{
     try{
-      const data = JSON.parse(evt.target.result);
-      if(data.tableros) STATE.tableros = data.tableros;
-      if(data.piezas) STATE.piezas = data.piezas;
-      STATE.habilitados = data.habilitados || [];
-      if(data.sobrantes) STATE.sobrantes = data.sobrantes;
-      if(data.params) STATE.params = data.params;
-      if(data.projectName) STATE.projectName = data.projectName;
+      const r = sanearProyecto(JSON.parse(evt.target.result));
+      if(!r.ok){ toast('Archivo inválido: ' + r.error + '. No se cambió ningún dato.','error'); return; }
+      aplicarProyecto(r.data);
       renderTableros(); renderPiezas(); renderHabilitados(); renderSobrantes(); loadParamsUI();
       $('projInfo').innerHTML = `Proyecto: <b>${escapeHtml(STATE.projectName)}</b>`;
       toast('Proyecto importado','success');
@@ -3736,6 +3737,133 @@ $('projFile').onchange = (e)=>{
 function escapeHtml(s){
   return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+/** Color seguro para usar en atributos style: solo acepta #rgb / #rrggbb(aa). */
+function colorSeguro(c){ return /^#[0-9a-f]{3,8}$/i.test(String(c)) ? c : '#c8a878'; }
+
+/* =========================================================
+   VALIDACIÓN DE PROYECTOS (autoguardado, "Cargar proyecto" e "Importar JSON")
+   Se valida la forma de TODOS los datos antes de aplicarlos: si algo es inválido no se cambia nada.
+   ========================================================= */
+const _esObj = v => v!==null && typeof v==='object' && !Array.isArray(v);
+const _num = v => ((typeof v==='number') || (typeof v==='string' && v.trim()!=='')) && Number.isFinite(+v) ? +v : NaN;
+const _txt = (v, def) => (typeof v==='string' || typeof v==='number') ? String(v) : def;
+const _VETAS = ['largo','ancho','ninguna'];
+const _CRITERIOS = ['tableros','desperdicio','costo','cortes'];
+const _ID_OK = /^[A-Za-z0-9_-]{1,64}$/;   // los identificadores internos (uid) solo usan estos caracteres
+function sanearProyecto(data){
+  const err = m => ({ok:false, error:m});
+  if(!_esObj(data)) return err('el archivo no tiene el formato de un proyecto');
+  const out = {};
+  const lista = (clave, etiqueta, fn)=>{
+    const v = data[clave];
+    if(v===undefined || v===null) return null;
+    if(!Array.isArray(v)) return `"${clave}" debe ser una lista`;
+    const res = [];
+    for(let i=0;i<v.length;i++){
+      if(!_esObj(v[i])) return `${etiqueta} ${i+1}: datos incompletos`;
+      const r = fn(v[i], `${etiqueta} ${i+1}`);
+      if(typeof r==='string') return r;
+      res.push(r);
+    }
+    out[clave] = res; return null;
+  };
+  const material = (o, tag) => _txt(o.material,'').trim()==='' ? `${tag}: falta el material` : null;
+  let e;
+  e = lista('tableros','Tablero',(t,tag)=>{
+    const largo=_num(t.largo), ancho=_num(t.ancho), esp=_num(t.espesor), cant=_num(t.cantidad);
+    const precio=_num(t.precio===undefined?0:t.precio), margen=_num(t.margen===undefined?0:t.margen);
+    if(!(largo>0) || !(ancho>0)) return `${tag}: dimensiones inválidas`;
+    if(!(esp>0)) return `${tag}: espesor inválido`;
+    if(!(cant>=1) || cant>TABLEROS_MAX) return `${tag}: cantidad inválida`;
+    if(!(precio>=0) || !(margen>=0)) return `${tag}: precio o margen inválido`;
+    const m = material(t,tag); if(m) return m;
+    if(t.id!==undefined && !_ID_OK.test(_txt(t.id,''))) return `${tag}: identificador inválido`;
+    return {...t, id:_txt(t.id,'')||uid(), nombre:_txt(t.nombre,'Tablero'), material:_txt(t.material,''), largo, ancho, espesor:esp, precio, cantidad:cant, margen,
+      color:colorSeguro(t.color), veta:_VETAS.includes(t.veta)?t.veta:'largo'};
+  }); if(e) return err(e);
+  e = lista('piezas','Pieza',(p,tag)=>{
+    const largo=_num(p.largo), ancho=_num(p.ancho), esp=_num(p.espesor), cant=_num(p.cantidad);
+    if(!(largo>0) || !(ancho>0)) return `${tag}: dimensiones inválidas`;
+    if(!(cant>0)) return `${tag}: cantidad inválida`;
+    if(!(esp>0)) return `${tag}: espesor inválido`;
+    const m = material(p,tag); if(m) return m;
+    if(p.id!==undefined && !_ID_OK.test(_txt(p.id,''))) return `${tag}: identificador inválido`;
+    if(p.habId!==undefined && p.habId!==null && p.habId!=='' && !_ID_OK.test(_txt(p.habId,''))) return `${tag}: identificador de habilitado inválido`;
+    const r = {...p, id:_txt(p.id,'')||uid(), nombre:_txt(p.nombre,''), material:_txt(p.material,''), largo, ancho, cantidad:cant, espesor:esp,
+      rot:!!p.rot, veta:_VETAS.includes(p.veta)?p.veta:'ninguna'};
+    for(const k of ['tolAncho','tolLargo']){ if(p[k]!==undefined && p[k]!==null){ const n=_num(p[k]); if(Number.isNaN(n)) return `${tag}: ${k} inválido`; r[k]=n; } }
+    for(const k of ['obs','mueble','habId','srcKey','unidad','tolAnchoTxt','tolLargoTxt']){ if(p[k]!==undefined){ if(typeof p[k]==='string'||typeof p[k]==='number') r[k]=String(p[k]); else delete r[k]; } }
+    if(p.tabLargo!==undefined || p.tabAncho!==undefined){
+      const L=_num(p.tabLargo), A=_num(p.tabAncho);
+      if(L>0 && A>0){ r.tabLargo=L; r.tabAncho=A; } else { delete r.tabLargo; delete r.tabAncho; }
+    }
+    return r;
+  }); if(e) return err(e);
+  e = lista('habilitados','Habilitado',(h,tag)=>{
+    if(h.id!==undefined && !_ID_OK.test(_txt(h.id,''))) return `${tag}: identificador inválido`;
+    const mu = (h.muebles===undefined || h.muebles==='') ? 1 : _num(h.muebles);
+    if(!(mu>=0)) return `${tag}: cantidad de muebles inválida`;
+    return {...h, id:_txt(h.id,'')||uid(), nombre:_txt(h.nombre,''), archivo:_txt(h.archivo,''), muebles:mu, incluir:typeof h.incluir==='boolean'?h.incluir:true};
+  });
+  if(e) return err(e);
+  e = lista('sobrantes','Sobrante',(s,tag)=>{
+    const largo=_num(s.largo), ancho=_num(s.ancho), esp=_num(s.espesor);
+    if(!(largo>0) || !(ancho>0) || !(esp>0)) return `${tag}: dimensiones inválidas`;
+    const m = material(s,tag); if(m) return m;
+    return {...s, largo, ancho, espesor:esp, material:_txt(s.material,''), veta:_VETAS.includes(s.veta)?s.veta:'largo', origen:_txt(s.origen,'')};
+  }); if(e) return err(e);
+  if(data.params!==undefined && data.params!==null){
+    if(!_esObj(data.params)) return err('"params" debe ser un objeto');
+    const p = {};
+    for(const [k,v] of Object.entries(data.params)){
+      if(v===null || v===undefined) continue;
+      const d = STATE.params[k];
+      if(typeof d==='number'){ const n=_num(v); if(Number.isNaN(n)) return err(`el parámetro "${k}" no es numérico`); p[k]=n; }
+      else if(typeof d==='boolean'){ if(typeof v!=='boolean') return err(`el parámetro "${k}" debe ser sí/no`); p[k]=v; }
+      else if(typeof d==='string'){
+        if(typeof v!=='string' && typeof v!=='number') return err(`el parámetro "${k}" es inválido`);
+        if(k==='criterio' && !_CRITERIOS.includes(String(v))) return err('el criterio de optimización no es válido');
+        p[k]=String(v);
+      }
+      else if(typeof v==='number'||typeof v==='boolean'||typeof v==='string') p[k]=v;   // clave desconocida: solo valores simples
+    }
+    out.params = {...STATE.params, ...p};
+  }
+  if(typeof data.projectName==='string' && data.projectName.trim()) out.projectName = data.projectName.slice(0,120);
+  return {ok:true, data:out};
+}
+/** Aplica un proyecto ya validado (mismo criterio que antes: solo reemplaza lo que el archivo trae). */
+function aplicarProyecto(d){
+  if(d.tableros) STATE.tableros = d.tableros;
+  if(d.piezas) STATE.piezas = d.piezas;
+  STATE.habilitados = d.habilitados || [];
+  if(d.sobrantes) STATE.sobrantes = d.sobrantes;
+  if(d.params) STATE.params = d.params;
+  if(d.projectName) STATE.projectName = d.projectName;
+}
+
+/* ---------- Librerías externas (CDN) y errores inesperados ---------- */
+const _LIBS = { excel: ()=> typeof XLSX!=='undefined', pdf: ()=> !!(window.jspdf && window.jspdf.jsPDF) };
+/** true (y avisa) si falta la librería; así Excel/PDF no fallan en silencio cuando no hubo internet la primera vez. */
+function libFalta(k){
+  if(_LIBS[k]()) return false;
+  toast(`No se cargó la librería de ${k==='excel'?'Excel':'PDF'}. Conéctate a internet, recarga la página y vuelve a intentarlo (solo se necesita la primera vez).`,'error');
+  return true;
+}
+(function(){
+  let ultimo = 0;
+  const avisar = m => {
+    try{
+      m = String(m||'').slice(0,140);
+      if(/ResizeObserver|^Script error/i.test(m)) return;
+      console.error('[CUTFIX]', m);
+      const ahora = Date.now(); if(ahora-ultimo < 4000) return; ultimo = ahora;
+      toast('Ocurrió un error inesperado: ' + m + '. Si se repite, recarga la página.','error');
+    }catch(_){}
+  };
+  window.addEventListener('error', e=>avisar(e.message || (e.error && e.error.message)));
+  window.addEventListener('unhandledrejection', e=>avisar(e.reason && e.reason.message ? e.reason.message : e.reason));
+})();
 
 /* =========================================================
    INIT
@@ -3754,6 +3882,7 @@ function init(){
     $('projInfo').innerHTML = `Proyecto: <b>${escapeHtml(STATE.projectName)}</b>`;
     toast('Datos previos recuperados');
   } else {
+    if(_autoDanado) toast('El autoguardado estaba dañado: se inició un proyecto limpio y se conservó una copia aparte','error');
     // Cargar un tablero de ejemplo por defecto para que el usuario pueda probar rápido
     STATE.tableros.push({
       id: uid(), nombre:'Melamina blanca', material:'Melamina',
