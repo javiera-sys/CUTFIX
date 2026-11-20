@@ -18,7 +18,12 @@ const STATE = {
   excelCols: null,
   zoom: 1,
   orientacion: 'horizontal',   // giro VISUAL del tablero: 'horizontal' | 'vertical' (no afecta el cálculo)
-  projectName: 'Sin guardar'
+  projectName: 'Sin guardar',
+  // Propiedades asignadas en tiempo de ejecución (declaradas aquí para documentar su existencia)
+  bestResult: null,         // resultado de la última optimización
+  bestName: null,           // nombre del método ganador (Óptimo)
+  ultimasEstrategias: null, // estrategias usadas en el último cálculo (para Recalcular)
+  firmaResultado: null      // hash de los datos al momento del último cálculo
 };
 
 const uid = () => '_' + Math.random().toString(36).slice(2,10);
@@ -1829,6 +1834,7 @@ function aplicarZoomSvg(svg){
 
 // <<PLANO-START (sin DOM; se prueba por separado)
 const textoVeta = v => v==='largo' ? 'a lo largo' : v==='ancho' ? 'a lo ancho' : 'sin veta';
+/** nf: número con separadores de miles (es-MX, ej. 1,220) y como máximo 1 decimal. Se usa en pantalla, planos SVG y PDF. */
 const nf = n => Number.isInteger(+n) ? fmt(n,0) : fmt(n,1);
 const escSvg = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const truncTxt = (s,n)=> s.length>n ? s.slice(0,Math.max(1,n-1))+'…' : s;
@@ -1985,20 +1991,6 @@ function ajustarNombre(texto, rw, rh, fsMax, fsMin, ancho, k){
   return null;
 }
 
-/** Elige tamaño de letra y texto que quepan DENTRO de la pieza; si no caben, devuelve null. */
-function layoutTextoPieza(lineas, pw, ph){
-  const C = 0.6; // ancho medio de un carácter ≈ 0.6 × tamaño
-  let fs = Math.min(12, ph/(lineas.length*1.3+0.3));
-  if(fs < 7) return null;
-  const out = [];
-  for(let i=0;i<lineas.length;i++){
-    const l = lineas[i];
-    const maxChars = Math.floor((pw-6)/(fs*C));
-    if(l.fijo){ if(l.t.length>maxChars) return null; out.push(l.t); }
-    else { if(maxChars < l.min) return null; out.push(truncTxt(l.t, maxChars)); }
-  }
-  return { fs, lineas: out };
-}
 
 /**
  * Construye el SVG de un tablero (a escala real, sin deformar).
@@ -2273,6 +2265,7 @@ function hslAArreglo(str){
   return [f(h+1/3),f(h),f(h-1/3)].map(v=>Math.round(v*255));
 }
 
+/** nf2: número sin separadores de miles y hasta 2 decimales (se usa en la celda "por mueble" de la hoja PDF). */
 const nf2 = n => { const v = +n; return Number.isInteger(v) ? String(v) : String(Math.round(v*100)/100); };
 
 /** Resumen por material con el desglose por habilitado (piezas por mueble, muebles y piezas a cortar). */
@@ -2316,29 +2309,6 @@ function agruparLeyenda(placed, totales){
   }));
 }
 
-/** Elige tamaño de letra (pt) y texto que quepan dentro de una pieza dibujada en mm. */
-function textoPiezaPdf(doc, cands, pw, ph){
-  for(const c of cands){
-    for(let fs=8; fs>=4.5; fs-=0.5){
-      doc.setFontSize(fs);
-      const lh = fs*0.3528*1.25;
-      if(c.length*lh > ph-1) continue;
-      const lines = []; let ok = true;
-      for(const l of c){
-        let t = l.t; const maxW = pw-3;
-        if(doc.getTextWidth(t) > maxW){
-          if(l.fijo){ ok=false; break; }
-          while(t.length>5 && doc.getTextWidth(t+'...') > maxW) t = t.slice(0,-1);
-          if(doc.getTextWidth(t+'...') > maxW || t.length<=5){ ok=false; break; }
-          t += '...';
-        }
-        lines.push(t);
-      }
-      if(ok) return {fs, lines, lh};
-    }
-  }
-  return null;
-}
 
 /**
  * Firma del patrón de corte de un tablero: material, espesor, medidas, margen, veta, giro del dibujo y, para cada
@@ -3546,8 +3516,8 @@ $('btnPdfPlano').onclick = ()=>{
       b.placed.forEach((p,j)=>{
         const r = T(p.x, p.y, p.w, p.h);
         doc.setDrawColor(0,0,0);
-        const c = hslToRgb(p.material+p.name);
-        doc.setFillColor(c.r,c.g,c.b);
+        const c = hslAArreglo(hslColorFromString(p.material+p.name));
+        doc.setFillColor(c[0],c[1],c[2]);
         doc.rect(r.x, r.y, r.w, r.h, 'FD');
         if(p.veta==='largo' || p.veta==='ancho') flechaVetaPdf(doc, r, ((p.veta==='largo') !== !!p.rotated) !== R);   // flecha de veta
         doc.setDrawColor(0,0,0); doc.setLineWidth(0.2);
@@ -3570,14 +3540,6 @@ $('btnPdfPlano').onclick = ()=>{
     toast('Error generando PDF','error');
   }
 };
-function hslToRgb(hslStr){
-  // hslStr aquí es solo un string arbitrario para color; usamos hash
-  let hash=0; for(let i=0;i<hslStr.length;i++) hash = hslStr.charCodeAt(i) + ((hash<<5)-hash);
-  const r = 180 + (Math.abs(hash)%60);
-  const g = 180 + (Math.abs(hash>>8)%60);
-  const b = 180 + (Math.abs(hash>>16)%60);
-  return {r,g,b};
-}
 
 /* =========================================================
    HABILITADOS (cada Excel importado = un habilitado con N muebles)
