@@ -243,9 +243,9 @@
   </header>
 
   <div class="card" id="dimCard">
-    <h3>Dimensiones del tablero</h3>
+    <h3>Medida general del tablero</h3>
     <div class="form-grid">
-      <label>Medida del tablero para las piezas que importes
+      <label>Medida para los materiales que no elijas distinto abajo
         <select id="exdOpc">
           <option value="sq">A. Tablero de 122 × 122 cm</option>
           <option value="std" selected>B. Tablero de 244 × 122 cm (predeterminado)</option>
@@ -255,10 +255,18 @@
       <label class="exd-cust" style="display:none">Ancho (cm) <input type="number" id="exdAncho" min="0" step="any" inputmode="decimal" placeholder="Ej. 100"></label>
     </div>
     <div class="hint" id="exdSel"></div>
-    <div class="form-actions">
-      <button class="btn btn-outline" id="btnExdAplicar" type="button"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span>Aplicar a TODAS las piezas ya importadas</span></button>
+    <div class="hint">Esta medida es el valor de respaldo. Al subir el archivo aparecerá la tabla <b>«Medida de tablero por material»</b>, donde cada material y espesor puede usar una medida distinta (122 × 122, 244 × 122 o personalizada) en la misma importación. Material, espesor o medida distintos nunca comparten tablero: cada combinación se optimiza por separado. Las medidas personalizadas se usan exactamente como las captures, y después puedes ajustar pieza por pieza en <b>Piezas</b>.</div>
+  </div>
+
+  <div class="card" id="dimMatCard" style="display:none">
+    <h3>Medida de tablero por material</h3>
+    <div class="table-wrap">
+      <table class="data-table" id="tablaDimMat">
+        <thead><tr><th>Material</th><th>Espesor (mm)</th><th>Renglones</th><th>Medida del tablero</th></tr></thead>
+        <tbody></tbody>
+      </table>
     </div>
-    <div class="hint">La medida elegida se asigna a las piezas que importes a partir de ahora y puedes cambiarla antes de optimizar. También puedes asignar una medida distinta a cada pieza o a cada material en <b>Piezas</b>. Piezas con medida, material o espesor distintos nunca comparten tablero: cada combinación se optimiza por separado. Las medidas personalizadas se usan exactamente como las captures.</div>
+    <div class="hint">Elige la medida de cada material en una sola pantalla y luego pulsa <b>Importar</b>: cada pieza queda con la medida de su material. «Medida general» usa la elegida arriba.</div>
   </div>
 
   <div class="card">
