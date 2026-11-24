@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/35113540/README.md)
+[README.md](https://github.com/user-attachments/files/35381262/README.md)
 [README.md](https://github.com/user-attachments/files/35089505/README.md)
 # ✂️ CUTFIX PRO — Optimizador de tableros
 
@@ -299,7 +299,7 @@ Nada se carga hasta confirmar, y el cálculo nunca se ejecuta solo.
 
 ## 📐 Medida de tablero por pieza y grupos de optimización
 
-- En **Importar Excel → Dimensiones del tablero** se elige la medida que recibirán las piezas importadas: **A) 122 × 122 cm**, **B) 244 × 122 cm** (predeterminada) o **C) personalizado** (largo y ancho en cm, usados exactamente como se capturan).
+- En **Importar Excel** hay una **medida general** (A: 122 × 122 cm, B: 244 × 122 cm predeterminada, C: personalizada en cm) y, al subir el archivo o archivos, la tabla **«Medida de tablero por material»**: cada material y espesor elige su propia medida y todo se aplica con un solo clic en Importar. «Medida general» solo se usa para los materiales que no elijas distinto.
 - En **Piezas** cada renglón tiene su columna **Tablero (cm)** y existe una barra para asignar una medida a todas las piezas de un material. Una pieza «Predeterminado» (proyectos antiguos o captura manual) conserva el comportamiento anterior.
 - Las piezas se guardan con `tabLargo` / `tabAncho` (mm).
 - **Grupo de optimización = material + espesor + largo + ancho del tablero** (`claveGrupo`, usado por `expandPieces`). Nunca se mezclan materiales, espesores ni medidas en un mismo tablero; cada grupo se optimiza por separado con la modalidad elegida.
