@@ -445,3 +445,8 @@ body.voz-abierto{overflow:hidden}
 .col-tab select{min-width:118px;font-size:12.5px;padding:4px 6px}
 .tab-cust{display:flex;align-items:center;gap:4px;margin-top:4px;white-space:nowrap}
 .tab-cust input{width:62px;font-size:12.5px;padding:4px 6px}
+
+/* Medida de tablero por material (importación) */
+#tablaDimMat select{min-width:150px}
+.dm-cust{white-space:nowrap}
+.dm-cust input{width:74px;font-size:13px;padding:4px 6px}
