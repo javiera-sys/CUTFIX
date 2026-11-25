@@ -450,3 +450,12 @@ body.voz-abierto{overflow:hidden}
 #tablaDimMat select{min-width:150px}
 .dm-cust{white-space:nowrap}
 .dm-cust input{width:74px;font-size:13px;padding:4px 6px}
+
+/* Medida de tablero por pieza (importación) */
+#dimPzaDet>summary{cursor:pointer;padding:2px 0;list-style-position:inside}
+.dp-bulk{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
+.dp-bulk input[type=search]{flex:1 1 180px;min-width:150px}
+.dp-bulk select{min-width:140px}
+.dp-scroll{max-height:380px;overflow:auto}
+#tablaDimPza select{min-width:150px}
+#tablaDimPza th:first-child,#tablaDimPza td:first-child{width:36px;text-align:center}
