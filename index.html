@@ -269,6 +269,29 @@
     <div class="hint">Elige la medida de cada material en una sola pantalla y luego pulsa <b>Importar</b>: cada pieza queda con la medida de su material. «Medida general» usa la elegida arriba.</div>
   </div>
 
+  <div class="card" id="dimPzaCard" style="display:none">
+    <details id="dimPzaDet">
+      <summary><b>Medida de tablero por pieza (opcional)</b> <span id="dimPzaResumen" class="muted"></span></summary>
+      <div class="hint">Por defecto cada pieza usa la medida de su material. Aquí puedes darle una medida distinta solo a las piezas que quieras: cámbiala renglón por renglón, o marca varias piezas, elige la medida y pulsa <b>Asignar a las marcadas</b>. La medida de una pieza manda sobre la de su material.</div>
+      <div class="dp-bulk">
+        <input type="search" id="dpFiltro" placeholder="Filtrar por nombre o material" aria-label="Filtrar piezas">
+        <select id="dpOpc" aria-label="Medida a asignar a las marcadas">
+          <option value="sq">122 × 122 cm</option><option value="std">244 × 122 cm</option><option value="custom">Personalizado</option>
+        </select>
+        <span id="dpCust" class="dm-cust" style="display:none"><input type="number" id="dpLargo" min="0" step="any" inputmode="decimal" placeholder="Largo" aria-label="Largo en cm"> × <input type="number" id="dpAncho" min="0" step="any" inputmode="decimal" placeholder="Ancho" aria-label="Ancho en cm"> cm</span>
+        <button class="btn btn-sm btn-outline" id="btnDpAsignar" type="button"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span>Asignar a las marcadas</span></button>
+        <button class="btn btn-sm btn-outline" id="btnDpQuitar" type="button"><span>Volver a «igual que su material»</span></button>
+      </div>
+      <div class="table-wrap dp-scroll">
+        <table class="data-table" id="tablaDimPza">
+          <thead><tr><th><input type="checkbox" id="dpTodas" aria-label="Marcar todas las piezas visibles"></th><th>Pieza</th><th>Material</th><th>Ancho × largo (mm)</th><th>Cant.</th><th>Medida del tablero</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="muted" id="dpNota"></div>
+    </details>
+  </div>
+
   <div class="card">
     <h3>1. Selecciona el archivo o los archivos</h3>
     <input type="file" id="excelFile" accept=".xlsx,.xls" multiple>
