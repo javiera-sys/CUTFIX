@@ -260,22 +260,106 @@ function _dmCambio(ev){
 }
 $('tablaDimMat').addEventListener('input', _dmCambio);
 $('tablaDimMat').addEventListener('change', _dmCambio);
-/** Medida de cada material+espesor de las piezas a importar. Devuelve {clave:{largo,ancho}} o null (avisa) si algo es inválido. */
+/* ---------- Medida de tablero POR PIEZA (opcional; manda sobre la del material) ---------- */
+const _dimPza = {};          // srcKey (archivo#fila) -> {opc:'mat'|'sq'|'std'|'custom', largo:'', ancho:''}
+const _dpSel = new Set();    // srcKey de las piezas marcadas para «Asignar a las marcadas»
+let _dpItems = [];           // piezas que se van a importar (las que lista la tabla)
+const DP_MAX = 400;          // filas dibujadas a la vez (el filtro permite llegar a las demás)
+const _dpPropia = k => _dimPza[k] && _dimPza[k].opc!=='mat';
+/** Muestra u oculta la tarjeta según haya piezas por importar; refresca la lista. */
+function renderDimImport(items){
+  renderDimPorMaterial(items);
+  _dpItems = items.filter(x=>x.srcKey);
+  const vivas = new Set(_dpItems.map(x=>x.srcKey));
+  [..._dpSel].forEach(k=>{ if(!vivas.has(k)) _dpSel.delete(k); });
+  if(!_dpItems.length){ $('dimPzaCard').style.display = 'none'; $('tablaDimPza').querySelector('tbody').innerHTML = ''; return; }
+  $('dimPzaCard').style.display = 'block';
+  dibujarDimPorPieza();
+}
+function dibujarDimPorPieza(){
+  const q = normTxt($('dpFiltro').value).trim();
+  const vis = _dpItems.filter(x=> !q || normTxt(x.nombre).includes(q) || normTxt(x.material).includes(q));
+  const mostrar = vis.slice(0, DP_MAX);
+  $('tablaDimPza').querySelector('tbody').innerHTML = mostrar.map(x=>{
+    const k = escapeHtml(x.srcKey), c = _dimPza[x.srcKey] || {opc:'mat', largo:'', ancho:''};
+    const op = (v,t)=>`<option value="${v}"${c.opc===v?' selected':''}>${t}</option>`;
+    return `<tr><td><input type="checkbox" data-dpk="${k}"${_dpSel.has(x.srcKey)?' checked':''} aria-label="Marcar ${escapeHtml(x.nombre)}"></td>`+
+      `<td>${escapeHtml(x.nombre)}</td><td>${escapeHtml(x.material)}</td><td>${fmt(x.ancho,1)} × ${fmt(x.largo,1)}</td><td>${x.cantidad}</td><td>`+
+      `<select data-dps="${k}" aria-label="Medida de tablero de ${escapeHtml(x.nombre)}">${op('mat','Igual que su material')}${op('sq','122 × 122 cm')}${op('std','244 × 122 cm')}${op('custom','Personalizado')}</select>`+
+      `<span class="dm-cust" style="${c.opc==='custom'?'':'display:none'}"> <input type="number" min="0" step="any" inputmode="decimal" data-dpl="${k}" placeholder="Largo" value="${escapeHtml(c.largo)}" aria-label="Largo en cm"> × `+
+      `<input type="number" min="0" step="any" inputmode="decimal" data-dpa="${k}" placeholder="Ancho" value="${escapeHtml(c.ancho)}" aria-label="Ancho en cm"> cm</span></td></tr>`;
+  }).join('');
+  $('dpNota').textContent = vis.length>DP_MAX ? `Mostrando ${DP_MAX} de ${vis.length} piezas: usa el filtro para encontrar las demás.` : '';
+  $('dpTodas').checked = mostrar.length>0 && mostrar.every(x=>_dpSel.has(x.srcKey));
+  actualizarResumenPza();
+}
+function actualizarResumenPza(){
+  const n = _dpItems.filter(x=>_dpPropia(x.srcKey)).length;
+  $('dimPzaResumen').textContent = n ? `· ${n} pieza(s) con medida propia` : '· todas usan la medida de su material';
+}
+function _dpCambio(ev){
+  const t = ev.target;
+  if(t.dataset.dpk!==undefined){ if(t.checked) _dpSel.add(t.dataset.dpk); else _dpSel.delete(t.dataset.dpk); return; }
+  let k, campo;
+  if(t.dataset.dps!==undefined){ k = t.dataset.dps; campo = 'opc'; }
+  else if(t.dataset.dpl!==undefined){ k = t.dataset.dpl; campo = 'largo'; }
+  else if(t.dataset.dpa!==undefined){ k = t.dataset.dpa; campo = 'ancho'; }
+  else return;
+  const c = _dimPza[k] = _dimPza[k] || {opc:'mat', largo:'', ancho:''};
+  c[campo] = t.value;
+  if(campo==='opc') t.closest('td').querySelector('.dm-cust').style.display = t.value==='custom' ? '' : 'none';
+  actualizarResumenPza();
+}
+$('tablaDimPza').addEventListener('change', _dpCambio);
+$('tablaDimPza').addEventListener('input', _dpCambio);
+$('dpFiltro').addEventListener('input', dibujarDimPorPieza);
+$('dpOpc').addEventListener('change', ()=>{ $('dpCust').style.display = $('dpOpc').value==='custom' ? '' : 'none'; });
+$('dpTodas').addEventListener('change', ()=>{   // marca/desmarca SOLO las piezas visibles con el filtro actual
+  const q = normTxt($('dpFiltro').value).trim();
+  _dpItems.filter(x=> !q || normTxt(x.nombre).includes(q) || normTxt(x.material).includes(q)).slice(0, DP_MAX)
+    .forEach(x=>{ if($('dpTodas').checked) _dpSel.add(x.srcKey); else _dpSel.delete(x.srcKey); });
+  dibujarDimPorPieza();
+});
+$('btnDpAsignar').onclick = ()=>{
+  const op = $('dpOpc').value, r = dimDeValores(op, $('dpLargo').value, $('dpAncho').value);
+  if(r.error){ toast(r.error,'error'); return; }
+  if(!_dpSel.size){ toast('Marca primero las piezas a las que quieres asignar esa medida','error'); return; }
+  const n = _dpSel.size;
+  _dpSel.forEach(k=>{ _dimPza[k] = {opc:op, largo: op==='custom' ? $('dpLargo').value : '', ancho: op==='custom' ? $('dpAncho').value : ''}; });
+  _dpSel.clear(); dibujarDimPorPieza();
+  toast(`Medida ${etiquetaDim(r.dim.largo, r.dim.ancho)} asignada a ${n} pieza(s)`,'success');
+};
+$('btnDpQuitar').onclick = ()=>{
+  if(!_dpSel.size){ toast('Marca primero las piezas que quieres devolver a la medida de su material','error'); return; }
+  const n = _dpSel.size; _dpSel.forEach(k=>{ delete _dimPza[k]; }); _dpSel.clear(); dibujarDimPorPieza();
+  toast(`${n} pieza(s) vuelven a usar la medida de su material`,'success');
+};
+/** Medida de cada pieza a importar: la propia si la tiene; si no, la de su material (o la general).
+    Devuelve una función pieza -> {largo,ancho}, o null (avisando) si algo es inválido. */
 function resolverDimsImport(items){
-  const gen = leerDimSelector('exdOpc','exdLargo','exdAncho'), mapa = {};
+  const gen = leerDimSelector('exdOpc','exdLargo','exdAncho'), porMat = {}, porPieza = {};
   for(const x of items){
-    const k = x.material+'|'+x.espesor; if(mapa[k]) continue;
-    const c = _dimMat[k], propia = c && c.opc!=='gen';
-    const r = propia ? dimDeValores(c.opc, c.largo, c.ancho) : gen;
+    if(_dpPropia(x.srcKey)){
+      const c = _dimPza[x.srcKey], r = dimDeValores(c.opc, c.largo, c.ancho);
+      if(r.error){
+        toast(`Pieza «${x.nombre}» (fila ${x.fila}): ${r.error}`,'error');
+        $('dimPzaDet').open = true; $('dimPzaCard').scrollIntoView({behavior:'smooth', block:'center'});
+        return null;
+      }
+      porPieza[x.srcKey] = r.dim; continue;
+    }
+    const k = x.material+'|'+x.espesor; if(porMat[k]) continue;
+    const cm = _dimMat[k], propia = cm && cm.opc!=='gen';
+    const r = propia ? dimDeValores(cm.opc, cm.largo, cm.ancho) : gen;
     if(r.error){
       const donde = propia ? `${x.material} (${+(+x.espesor).toFixed(2)} mm)` : 'Medida general';
       toast(`${donde}: ${r.error}`,'error');
       $(propia ? 'dimMatCard' : 'dimCard').scrollIntoView({behavior:'smooth', block:'center'});
       return null;
     }
-    mapa[k] = r.dim;
+    porMat[k] = r.dim;
   }
-  return mapa;
+  return x => porPieza[x.srcKey] || porMat[x.material+'|'+x.espesor];
 }
 
 /* Asignación por material (barra encima de la tabla de piezas) */
@@ -2929,7 +3013,7 @@ function importReiniciarIndividual(){
   });
   $('excelWarnings').innerHTML = ''; $('excelRowCount').textContent = ''; delete $('excelRowCount').dataset.base;
   $('impHabNombre').value = ''; $('impMuebles').value = 1;
-  renderDimPorMaterial([]);
+  renderDimImport([]);
 }
 
 // Un solo selector: 1 archivo -> flujo individual (mapeo + revisión); 2 o más -> lista de habilitados
@@ -3083,7 +3167,7 @@ function updateExcelPreview(){
   }
   aplicarFiltroPreview();
   $('btnConfirmImport').disabled = marcadas.length===0;
-  renderDimPorMaterial(marcadas);
+  renderDimImport(marcadas);
   if(wrapPrev){ wrapPrev.scrollTop = scrollPrev; wrapPrev.scrollLeft = scrollPrevX; }
 
   // Revisión previa
@@ -3267,7 +3351,7 @@ $('btnConfirmImport').onclick = ()=>{
   const ok = res.items.filter(x=>x.estado==='ok' && !_excelDesmarcadas.has(x.fila));   // solo las piezas marcadas como "Cortar"
   const errores = res.items.filter(x=>x.estado==='error').length;
   if(!ok.length){ toast('No hay piezas marcadas para cortar','error'); return; }
-  const mapaDim = resolverDimsImport(ok); if(!mapaDim) return;
+  const dimDe = resolverDimsImport(ok); if(!dimDe) return;
 
   // Las piezas DESMARCADAS mandan: si ese mismo archivo ya se había importado antes, se quitan del proyecto
   // las piezas de esas filas (si no, seguirían apareciendo en la optimización y en los planos).
@@ -3283,7 +3367,7 @@ $('btnConfirmImport').onclick = ()=>{
   }
   const existentes = new Set(STATE.piezas.map(p=>p.srcKey).filter(Boolean));
   let count = 0, dup = 0;
-  const combos = new Set();
+  const combos = new Map();
   const hab = {
     id: uid(),
     nombre: ($('impHabNombre').value.trim() || _excelFileName.replace(/\.[^.]+$/,'')),
@@ -3292,6 +3376,7 @@ $('btnConfirmImport').onclick = ()=>{
   };
   ok.forEach(x=>{
     if(existentes.has(x.srcKey)){ dup++; return; }
+    const dp = dimDe(x);
     STATE.piezas.push({
       id: uid(), nombre: x.nombre, largo: x.largo, ancho: x.ancho,
       cantidad: x.cantidad, espesor: x.espesor, material: x.material,
@@ -3299,22 +3384,22 @@ $('btnConfirmImport').onclick = ()=>{
       habId: hab.id,
       unidad: x.unidad, tolAncho: x.tolAncho, tolLargo: x.tolLargo,
       tolAnchoTxt: x.tolAnchoTxt, tolLargoTxt: x.tolLargoTxt, srcKey: x.srcKey,
-      tabLargo: mapaDim[x.material+'|'+x.espesor].largo, tabAncho: mapaDim[x.material+'|'+x.espesor].ancho
+      tabLargo: dp.largo, tabAncho: dp.ancho
     });
     ensureOption('pMaterial', x.material); ensureOption('tMaterial', x.material);
-    combos.add(x.material+'|'+x.espesor);
+    combos.set(x.material+'|'+x.espesor+'|'+dp.largo+'|'+dp.ancho, {mat:x.material, e:+x.espesor, dm:dp});
     count++;
   });
   // Tablero de la medida elegida para cada material/espesor sin tablero registrado de esa medida
   let nuevos = 0;
-  combos.forEach(k=>{
-    const [mat, esp] = k.split('|'); const e = +esp; const dm = mapaDim[k];
+  combos.forEach(({mat, e, dm})=>{
     if(!sinStock() && !STATE.tableros.some(t=>t.material===mat && +t.espesor===e && +t.largo===dm.largo && +t.ancho===dm.ancho)){
       STATE.tableros.push({id:uid(), nombre:`${mat} (auto)`, material:mat, largo:dm.largo, ancho:dm.ancho,
         espesor:e, precio:0, color:'#c8a878', veta:'largo', cantidad:TABLEROS_AUTO_CANT, margen:0});
       nuevos++;
     }
   });
+  ok.forEach(x=>{ delete _dimPza[x.srcKey]; _dpSel.delete(x.srcKey); });
   if(count>0) STATE.habilitados.push(hab);
   renderPiezas(); renderTableros(); renderHabilitados();
   const msg = `Importadas ${count} piezas` + (dup?` · ${dup} ya existían`:'') + (errores?` · ${errores} con error`:'') + (nuevos?` · ${nuevos} tablero(s) creado(s)`:'') + (quitadas?` · ${quitadas} desmarcadas quitadas`:'');
@@ -3373,8 +3458,8 @@ function loteRender(){
     tb.appendChild(tr);
   });
   loteResumen();
-  if(LOTE.length) renderDimPorMaterial(LOTE.filter(it=>it.ok>0).flatMap(it=>it.res.items.filter(x=>x.estado==='ok')));
-  else if(!STATE.excelRows) renderDimPorMaterial([]);
+  if(LOTE.length) renderDimImport(LOTE.filter(it=>it.ok>0).flatMap(it=>it.res.items.filter(x=>x.estado==='ok')));
+  else if(!STATE.excelRows) renderDimImport([]);
 }
 async function loteAgregar(files){
   if(libFalta('excel')) return;
@@ -3432,6 +3517,7 @@ $('btnBorrarContenido').onclick = ()=>{
   const hayContenido = LOTE.length > 0 || !!STATE.excelRows || !!$('excelFile').value;
   if(!hayContenido){ toast('No hay contenido cargado para borrar'); return; }
   if(!confirm('¿Borrar todo el contenido cargado en Importar Excel y empezar de nuevo?\n\nLos habilitados que ya importaste no se eliminan.')) return;
+  Object.keys(_dimPza).forEach(k=>{ delete _dimPza[k]; }); Object.keys(_dimMat).forEach(k=>{ delete _dimMat[k]; }); _dpSel.clear();   // empezar de nuevo
   LOTE.length = 0; loteRender();
   importReiniciarIndividual();
   $('excelFile').value = ''; $('loteFiles').value = '';
@@ -3446,9 +3532,9 @@ $('btnLoteConfirmar').onclick = ()=>{
     const first = $('tablaLote').querySelector(`[data-lmue="${faltan[0].id}"]`); if(first) first.focus();
     toast(`Falta la cantidad de muebles en ${faltan.length} habilitado(s)`,'error'); return;
   }
-  const mapaDim = resolverDimsImport(validos.flatMap(it=>it.res.items.filter(x=>x.estado==='ok'))); if(!mapaDim) return;
+  const dimDe = resolverDimsImport(validos.flatMap(it=>it.res.items.filter(x=>x.estado==='ok'))); if(!dimDe) return;
   const existentes = new Set(STATE.piezas.map(p=>p.srcKey).filter(Boolean));
-  const combos = new Set();
+  const combos = new Map();
   let nHab = 0, nPiezas = 0, dup = 0, errores = 0;
   validos.forEach(it=>{
     const hab = { id: uid(), nombre: (it.nombre||'').trim() || it.file.name.replace(/\.[^.]+$/,''),
@@ -3457,6 +3543,7 @@ $('btnLoteConfirmar').onclick = ()=>{
     it.res.items.filter(x=>x.estado==='ok').forEach(x=>{
       if(existentes.has(x.srcKey)){ dup++; return; }
       existentes.add(x.srcKey);
+      const dp = dimDe(x);
       STATE.piezas.push({
         id: uid(), nombre: x.nombre, largo: x.largo, ancho: x.ancho,
         cantidad: x.cantidad, espesor: x.espesor, material: x.material,
@@ -3464,24 +3551,24 @@ $('btnLoteConfirmar').onclick = ()=>{
         habId: hab.id,
         unidad: x.unidad, tolAncho: x.tolAncho, tolLargo: x.tolLargo,
         tolAnchoTxt: x.tolAnchoTxt, tolLargoTxt: x.tolLargoTxt, srcKey: x.srcKey,
-        tabLargo: mapaDim[x.material+'|'+x.espesor].largo, tabAncho: mapaDim[x.material+'|'+x.espesor].ancho
+        tabLargo: dp.largo, tabAncho: dp.ancho
       });
       ensureOption('pMaterial', x.material); ensureOption('tMaterial', x.material);
-      combos.add(x.material+'|'+x.espesor);
+      combos.set(x.material+'|'+x.espesor+'|'+dp.largo+'|'+dp.ancho, {mat:x.material, e:+x.espesor, dm:dp});
       count++;
     });
     errores += it.err;
     if(count>0){ STATE.habilitados.push(hab); nHab++; nPiezas += count; }
   });
   let nuevosTab = 0;
-  combos.forEach(k=>{
-    const [mat, esp] = k.split('|'); const e = +esp; const dm = mapaDim[k];
+  combos.forEach(({mat, e, dm})=>{
     if(!sinStock() && !STATE.tableros.some(t=>t.material===mat && +t.espesor===e && +t.largo===dm.largo && +t.ancho===dm.ancho)){
       STATE.tableros.push({id:uid(), nombre:`${mat} (auto)`, material:mat, largo:dm.largo, ancho:dm.ancho,
         espesor:e, precio:0, color:'#c8a878', veta:'largo', cantidad:TABLEROS_AUTO_CANT, margen:0});
       nuevosTab++;
     }
   });
+  validos.forEach(it=>it.res.items.forEach(x=>{ if(x.srcKey){ delete _dimPza[x.srcKey]; _dpSel.delete(x.srcKey); } }));
   const omitidos = LOTE.length - validos.length;
   LOTE.length = 0; loteRender();
   renderPiezas(); renderTableros(); renderHabilitados();
